@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../config/constants.dart';
 import '../../data/models/otp_service.dart';
 import 'group_header.dart';
 import 'service_row.dart';
@@ -25,10 +26,10 @@ class OtpTable extends StatelessWidget {
       sortColumnIndex: 1,
       columns: _buildColumns(),
       rows: _buildRows(context),
-      dataRowMinHeight: 28.0,
-      dataRowMaxHeight: 28.0,
-      headingRowHeight: 40.0,
-      dividerThickness: 0.5,
+      dataRowMinHeight: kRowMinHeight,
+      dataRowMaxHeight: kRowMaxHeight,
+      headingRowHeight: kHeaderHeight,
+      dividerThickness: kDividerThickness,
     );
   }
 
@@ -75,37 +76,65 @@ class OtpTable extends StatelessWidget {
     final constraints = BoxConstraints(
       maxWidth: MediaQuery.of(context).size.width,
     );
-    final nameWidth = constraints.maxWidth * 0.25;
-    final accountWidth = constraints.maxWidth * 0.25;
-    final issuerWidth = constraints.maxWidth * 0.1;
-    final otpWidth = constraints.maxWidth * 0.1;
-    final validityWidth = constraints.maxWidth * 0.05;
     
-    List<DataRow> rows = [];
+    final columnWidths = _calculateColumnWidths(constraints.maxWidth);
+    final List<DataRow> rows = [];
     
-    for (final entry in groupedServices.entries) {
+    // Sort groups for consistent display - Ungrouped always last
+    final sortedEntries = _getSortedEntries();
+    
+    for (final entry in sortedEntries) {
+      // Get group name from mapping or use a default
       String groupName = groupNames[entry.key] ?? 'Unknown Group';
       
       // Add group header row
       rows.add(GroupHeader(groupName: groupName));
       
       // Add service rows
-      for (int i = 0; i < entry.value.length; i++) {
-        OtpService service = entry.value[i];
+      final services = entry.value;
+      for (int i = 0; i < services.length; i++) {
         rows.add(
           ServiceRow(
-            service: service,
+            service: services[i],
             onTap: () => onRowTap(entry.key, i),
-            nameWidth: nameWidth,
-            accountWidth: accountWidth,
-            issuerWidth: issuerWidth,
-            otpWidth: otpWidth,
-            validityWidth: validityWidth,
+            nameWidth: columnWidths['name']!,
+            accountWidth: columnWidths['account']!,
+            issuerWidth: columnWidths['issuer']!,
+            otpWidth: columnWidths['otp']!,
+            validityWidth: columnWidths['validity']!,
           ),
         );
       }
     }
     
     return rows;
+  }
+  
+  List<MapEntry<String, List<OtpService>>> _getSortedEntries() {
+    // Extract entries and sort them
+    final entries = groupedServices.entries.toList();
+    
+    // Custom sort: Ungrouped always last, others alphabetically by group name
+    entries.sort((a, b) {
+      if (a.key == kUngroupedId) return 1; // Ungrouped always at the end
+      if (b.key == kUngroupedId) return -1; // Ungrouped always at the end
+      
+      // Default to alphabetical by group name
+      final aName = groupNames[a.key] ?? '';
+      final bName = groupNames[b.key] ?? '';
+      return aName.compareTo(bName);
+    });
+    
+    return entries;
+  }
+  
+  Map<String, double> _calculateColumnWidths(double totalWidth) {
+    return {
+      'name': totalWidth * 0.25,
+      'account': totalWidth * 0.25,
+      'issuer': totalWidth * 0.1,
+      'otp': totalWidth * 0.1,
+      'validity': totalWidth * 0.05,
+    };
   }
 }

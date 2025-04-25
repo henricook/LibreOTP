@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../config/app_config.dart';
+import '../../config/constants.dart';
 import '../state/otp_state.dart';
 import '../widgets/search_bar.dart';
 import '../widgets/otp_table.dart';
@@ -55,6 +56,51 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
+  Future<void> _refreshData() async {
+    final otpState = Provider.of<OtpState>(context, listen: false);
+    await otpState.refreshData();
+  }
+
+  Widget _buildErrorView(OtpState otpState) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(
+              Icons.error_outline,
+              color: Colors.red,
+              size: 60,
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'Failed to load data',
+              style: Theme.of(context).textTheme.headlineSmall,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              otpState.errorMessage,
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 24),
+            ElevatedButton.icon(
+              onPressed: _refreshData,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Retry'),
+            ),
+            const SizedBox(height: 8),
+            TextButton(
+              onPressed: () => _showDataDirectory(context),
+              child: const Text('View Data Directory'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -62,6 +108,11 @@ class _DashboardPageState extends State<DashboardPage> {
         backgroundColor: Theme.of(context).colorScheme.inversePrimary,
         title: Text(AppConfig.appTitle),
         actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _refreshData,
+            tooltip: 'Refresh Data',
+          ),
           IconButton(
             icon: const Icon(Icons.menu),
             onPressed: () {
@@ -101,6 +152,10 @@ class _DashboardPageState extends State<DashboardPage> {
             return const Center(child: CircularProgressIndicator());
           }
 
+          if (otpState.hasError) {
+            return _buildErrorView(otpState);
+          }
+
           return Stack(
             children: [
               Column(
@@ -117,16 +172,20 @@ class _DashboardPageState extends State<DashboardPage> {
                     child: Container(
                       alignment: Alignment.topLeft,
                       padding: const EdgeInsets.all(8.0),
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.vertical,
+                      child: RefreshIndicator(
+                        onRefresh: _refreshData,
                         child: SingleChildScrollView(
-                          scrollDirection: Axis.horizontal,
-                          child: OtpTable(
-                            groupedServices: otpState.groupedServices,
-                            groupNames: otpState.getGroupNames(),
-                            onRowTap: (groupId, index) => 
-                                otpState.generateOtp(groupId, index, context),
-                            sortAscending: _sortAscending,
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          scrollDirection: Axis.vertical,
+                          child: SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: OtpTable(
+                              groupedServices: otpState.groupedServices,
+                              groupNames: otpState.getGroupNames(),
+                              onRowTap: (groupId, index) => 
+                                  otpState.generateOtp(groupId, index, context),
+                              sortAscending: _sortAscending,
+                            ),
                           ),
                         ),
                       ),
@@ -135,7 +194,7 @@ class _DashboardPageState extends State<DashboardPage> {
                 ],
               ),
               if (otpState.showNotification)
-                const NotificationToast(message: 'OTP Code Copied to Clipboard!'),
+                const NotificationToast(message: kOtpCopiedMessage),
             ],
           );
         },
