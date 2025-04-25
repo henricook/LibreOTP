@@ -2,20 +2,19 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
-import 'package:libreotp/widgets/dashboard.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:otp/otp.dart';
-import 'package:faker/faker.dart';
+
+// This file is kept for backwards compatibility
+// New code should use the StorageRepository class instead
 
 Future<String> get _localPath async {
   final directory = await getApplicationDocumentsDirectory();
-  return directory.path + '/LibreOTP';
+  return '${directory.path}/LibreOTP';
 }
 
 Future<File> get _localFile async {
   final path = await _localPath;
-  debugPrint('Application Data Directory: ' + path);
+  debugPrint('Application Data Directory: $path');
   return File('$path/data.json');
 }
 

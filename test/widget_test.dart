@@ -7,24 +7,24 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
+import 'package:provider/provider.dart';
+import 'package:libreotp/config/app_config.dart';
+import 'package:libreotp/data/repositories/storage_repository.dart';
+import 'package:libreotp/domain/services/otp_service.dart';
+import 'package:libreotp/presentation/state/otp_state.dart';
 import 'package:libreotp/main.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
+  testWidgets('App title is shown', (WidgetTester tester) async {
     // Build our app and trigger a frame.
-    await tester.pumpWidget(const LibreOTPApp());
+    await tester.pumpWidget(
+      ChangeNotifierProvider(
+        create: (_) => OtpState(StorageRepository(), OtpGenerator()),
+        child: const LibreOTPApp(),
+      ),
+    );
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
-
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
-
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    // Verify that the app title is shown.
+    expect(find.text(AppConfig.appTitle), findsOneWidget);
   });
 }
