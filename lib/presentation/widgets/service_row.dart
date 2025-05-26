@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import '../../data/models/otp_service.dart';
+import '../state/otp_display_state.dart';
 
 class ServiceRow extends DataRow {
   ServiceRow({
     super.key,
     required OtpService service,
+    required OtpDisplayState displayState,
     required Function() onTap,
     required double nameWidth,
     required double accountWidth,
@@ -34,13 +36,13 @@ class ServiceRow extends DataRow {
             DataCell(
               SizedBox(
                 width: otpWidth,
-                child: Text(service.otpCode ?? ''),
+                child: Text(displayState.otpCode),
               ),
             ),
             DataCell(
               SizedBox(
                 width: validityWidth,
-                child: Text(service.validity ?? ''),
+                child: Text(displayState.validity),
               ),
             ),
           ],

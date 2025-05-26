@@ -8,10 +8,10 @@ import 'presentation/pages/dashboard_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  
+
   final storageRepository = StorageRepository();
   final otpGenerator = OtpGenerator();
-  
+
   runApp(
     ChangeNotifierProvider(
       create: (_) => OtpState(storageRepository, otpGenerator),

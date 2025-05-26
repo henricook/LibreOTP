@@ -16,10 +16,12 @@ class AboutPage extends StatelessWidget {
           Text(AppConfig.appTitle),
           const SizedBox(height: 8),
           GestureDetector(
-            onTap: () => Clipboard.setData(ClipboardData(text: AppConfig.githubUrl)),
+            onTap: () =>
+                Clipboard.setData(ClipboardData(text: AppConfig.githubUrl)),
             child: Text(
               AppConfig.githubUrl,
-              style: const TextStyle(color: Colors.blue, decoration: TextDecoration.underline),
+              style: const TextStyle(
+                  color: Colors.blue, decoration: TextDecoration.underline),
             ),
           ),
         ],

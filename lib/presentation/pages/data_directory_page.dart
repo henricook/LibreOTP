@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 class DataDirectoryPage extends StatelessWidget {
   final String dataDirectory;
-  
+
   const DataDirectoryPage({
     super.key,
     required this.dataDirectory,

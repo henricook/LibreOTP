@@ -12,7 +12,8 @@ class GroupHeader extends DataRow {
                 padding: const EdgeInsets.symmetric(vertical: 4.0),
                 child: Text(
                   groupName,
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  style: const TextStyle(
+                      fontSize: 16, fontWeight: FontWeight.bold),
                 ),
               ),
               placeholder: true,

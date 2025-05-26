@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import '../../data/models/otp_service.dart';
+import '../state/otp_state.dart';
 import 'group_header.dart';
 import 'service_row.dart';
 
@@ -80,21 +82,25 @@ class OtpTable extends StatelessWidget {
     final issuerWidth = constraints.maxWidth * 0.1;
     final otpWidth = constraints.maxWidth * 0.1;
     final validityWidth = constraints.maxWidth * 0.05;
-    
+
+    final otpState = Provider.of<OtpState>(context);
     List<DataRow> rows = [];
-    
+
     for (final entry in groupedServices.entries) {
       String groupName = groupNames[entry.key] ?? 'Unknown Group';
-      
+
       // Add group header row
       rows.add(GroupHeader(groupName: groupName));
-      
+
       // Add service rows
       for (int i = 0; i < entry.value.length; i++) {
         OtpService service = entry.value[i];
+        final serviceKey = '${entry.key}-$i';
+        final displayState = otpState.getOtpDisplayState(serviceKey);
         rows.add(
           ServiceRow(
             service: service,
+            displayState: displayState,
             onTap: () => onRowTap(entry.key, i),
             nameWidth: nameWidth,
             accountWidth: accountWidth,
@@ -105,7 +111,7 @@ class OtpTable extends StatelessWidget {
         );
       }
     }
-    
+
     return rows;
   }
 }

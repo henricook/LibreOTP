@@ -5,39 +5,37 @@ class OtpService {
   final OtpConfig otp;
   final OrderInfo order;
   final String secret;
-  String? otpCode;
-  String? validity;
 
-  OtpService({
+  const OtpService({
     required this.id,
     required this.name,
     this.groupId,
     required this.otp,
     required this.order,
     required this.secret,
-    this.otpCode,
-    this.validity,
   });
 
   factory OtpService.fromJson(Map<String, dynamic> json) {
     return OtpService(
-      id: json['id'] ?? '',
-      name: json['name'] ?? '',
-      groupId: json['groupId'],
-      otp: OtpConfig.fromJson(json['otp'] ?? {}),
-      order: OrderInfo.fromJson(json['order'] ?? {}),
-      secret: json['secret'] ?? '',
+      id: json['id']?.toString() ?? '',
+      name: json['name']?.toString() ?? '',
+      groupId: json['groupId']?.toString(),
+      otp: OtpConfig.fromJson(
+          json['otp'] is Map<String, dynamic> ? json['otp'] : {}),
+      order: OrderInfo.fromJson(
+          json['order'] is Map<String, dynamic> ? json['order'] : {}),
+      secret: json['secret']?.toString() ?? '',
     );
   }
 
   Map<String, dynamic> toJson() => {
-    'id': id,
-    'name': name,
-    'groupId': groupId,
-    'otp': otp.toJson(),
-    'order': order.toJson(),
-    'secret': secret,
-  };
+        'id': id,
+        'name': name,
+        'groupId': groupId,
+        'otp': otp.toJson(),
+        'order': order.toJson(),
+        'secret': secret,
+      };
 }
 
 class OtpConfig {
@@ -47,7 +45,7 @@ class OtpConfig {
   final int period;
   final String algorithm;
 
-  OtpConfig({
+  const OtpConfig({
     required this.account,
     required this.issuer,
     this.digits = 6,
@@ -56,36 +54,58 @@ class OtpConfig {
   });
 
   factory OtpConfig.fromJson(Map<String, dynamic> json) {
+    final digitsValue = json['digits'];
+    int digits = 6;
+    if (digitsValue != null) {
+      try {
+        digits = int.parse(digitsValue.toString());
+        if (digits < 4 || digits > 10) {
+          digits = 6; // Default to 6 if out of valid range
+        }
+      } catch (e) {
+        digits = 6; // Default to 6 if parsing fails
+      }
+    }
+
+    final periodValue = json['period'];
+    int period = 30;
+    if (periodValue != null && periodValue is int && periodValue > 0) {
+      period = periodValue;
+    }
+
     return OtpConfig(
-      account: json['account'] ?? '',
-      issuer: json['issuer'] ?? '',
-      digits: int.parse(json['digits']?.toString() ?? '6'),
-      period: json['period'] ?? 30,
-      algorithm: json['algorithm'] ?? 'SHA1',
+      account: json['account']?.toString() ?? '',
+      issuer: json['issuer']?.toString() ?? '',
+      digits: digits,
+      period: period,
+      algorithm: json['algorithm']?.toString() ?? 'SHA1',
     );
   }
 
   Map<String, dynamic> toJson() => {
-    'account': account,
-    'issuer': issuer,
-    'digits': digits,
-    'period': period,
-    'algorithm': algorithm,
-  };
+        'account': account,
+        'issuer': issuer,
+        'digits': digits,
+        'period': period,
+        'algorithm': algorithm,
+      };
 }
 
 class OrderInfo {
   final int position;
 
-  OrderInfo({required this.position});
+  const OrderInfo({required this.position});
 
   factory OrderInfo.fromJson(Map<String, dynamic> json) {
-    return OrderInfo(
-      position: json['position'] ?? 0,
-    );
+    final positionValue = json['position'];
+    int position = 0;
+    if (positionValue != null && positionValue is int) {
+      position = positionValue;
+    }
+    return OrderInfo(position: position);
   }
 
   Map<String, dynamic> toJson() => {
-    'position': position,
-  };
+        'position': position,
+      };
 }

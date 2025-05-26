@@ -37,17 +37,17 @@ class StorageRepository {
       if (await file.exists()) {
         String contents = await file.readAsString();
         Map<String, dynamic> jsonData = jsonDecode(contents);
-        
+
         // Parse services
         List<OtpService> services = (jsonData['services'] as List? ?? [])
             .map((item) => OtpService.fromJson(item))
             .toList();
-        
+
         // Parse groups
         List<Group> groups = (jsonData['groups'] as List? ?? [])
             .map((item) => Group.fromJson(item))
             .toList();
-        
+
         return AppData(services: services, groups: groups);
       } else {
         // Handle the case where the file does not exist

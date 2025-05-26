@@ -124,7 +124,7 @@ class _DashboardPageState extends State<DashboardPage> {
                           child: OtpTable(
                             groupedServices: otpState.groupedServices,
                             groupNames: otpState.getGroupNames(),
-                            onRowTap: (groupId, index) => 
+                            onRowTap: (groupId, index) =>
                                 otpState.generateOtp(groupId, index, context),
                             sortAscending: _sortAscending,
                           ),
@@ -135,7 +135,8 @@ class _DashboardPageState extends State<DashboardPage> {
                 ],
               ),
               if (otpState.showNotification)
-                const NotificationToast(message: 'OTP Code Copied to Clipboard!'),
+                const NotificationToast(
+                    message: 'OTP Code Copied to Clipboard!'),
             ],
           );
         },

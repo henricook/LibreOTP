@@ -30,7 +30,8 @@ class OtpGenerator {
   }
 
   int getRemainingSeconds(OtpService service) {
-    final int currentTimeSeconds = DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000;
+    final int currentTimeSeconds =
+        DateTime.now().toUtc().millisecondsSinceEpoch ~/ 1000;
     return service.otp.period - (currentTimeSeconds % service.otp.period);
   }
 }
