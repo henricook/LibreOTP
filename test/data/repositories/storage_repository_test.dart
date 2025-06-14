@@ -2,16 +2,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:libreotp/data/models/group.dart';
 import 'package:libreotp/data/models/otp_service.dart';
 import 'package:libreotp/data/repositories/storage_repository.dart';
-import 'dart:io';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   
   group('StorageRepository', () {
-    late StorageRepository repository;
-
     setUp(() {
-      repository = StorageRepository();
     });
 
     group('Data models validation', () {

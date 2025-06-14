@@ -3,5 +3,15 @@ Version: 1.0.0
 Section: utils
 Priority: optional
 Architecture: amd64
+Depends: libsecret-1-0, libjsoncpp26 | libjsoncpp25 | libjsoncpp1
 Maintainer: Henri Cook <libreotp@henripub>
 Description: LibreOTP - A Desktop App for 2FAS
+ LibreOTP is a cross-platform desktop OTP code generator that works with
+ exported JSON files from 2FAS. It supports both encrypted and unencrypted
+ 2FAS exports with secure password storage for encrypted backups.
+ .
+ Features:
+  - Support for 2FAS group organization
+  - Search functionality across all codes
+  - Secure password storage for encrypted backups
+  - Cross-platform compatibility

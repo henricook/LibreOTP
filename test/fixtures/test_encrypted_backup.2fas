@@ -1,0 +1,18 @@
+{
+  "appOrigin": "ios",
+  "appVersionCode": 5030902,
+  "appVersionName": "5.3.9",
+  "schemaVersion": 4,
+  "updatedAt": 1234567890,
+  "services": [],
+  "servicesEncrypted": "2Gw/HEvoTZQAmSYPe4J6fj34agd33CpJ9TMUWEZn7YPK6rDtg786FBBdBpoiGZnrASRxbGNKBNDViX9h8xp83mFBvQHwhhw6ovHtSDsoBpHVh05NR31n+izjLtG0aBxta08sDZdvhhPE3+4AdMq74m9qpk5+cZT8dccMOc0AJVwe7qQqKFBg5L+r4FNEZ9GIA7Qwl8BWSpOcsbTvo8uWesJhPYu0Jd4YpM58+xQOWq+JGPeUZbD26awvWDRd4sIdqqWZ9mODQRmtMJvaaf569stBJWd1rt4iRnYgqz1WbRM4MypWarqpATOTKnRdsogAaG9FMXl3KOdg5nBJMVcZszVEWc6UXIErIA0XdO10GJ7CJInhfHIqDz1CIf00RApuY46l+xY8j6fu92SMvUHy84we7JFl0QZLedqv+FJaxfB65gxcCyWvz4/hyX8ancPY1nMdWSeirUUpZqRNOabl24LWrDpXoFIZMiQ196TPD3C2Cp8clkc9g1HxDDefxG17S6M6iI4YvN6iGXnsmiPoNOmW2I2u6UR4QU9k6R4HDtqM3c3cwiL58qOy9auiAwhhXnZa3Vtici1rDq8Dbraq+BqlVIK9D8bYPnnYuBAKZWcpOIc6H8pYaE8PK9G9mX/4lJFtxoY+nG2aqvzg9iVK6Cz4GhcpZQyhnPb9d5ebcj8bDtc1fVF5w0C7/7ggUs5ko/NDPNMnPQWTR9q4FX3ACeG7YdZOOL8MJKFHM9oG4ds+g5uI5pcQCynE6Zp69GN6wcQK/zKZFag4QvGTR8vK7LkjZzLq+uPG4ZImw/U=:J8Zt5Vm141IaBKEOFB1oBg==:SqY2zSsmKpYADXMv",
+  "reference": "JGY1yYAPtBOZmFa+RpcOmzP0x7y2JnL5A/knMmZpMgyIl+S4TvaEiHb/BdVXGNsC1Kecf2OP1uS2DLSj5YtzAFGIvUenpsquKU77MPZHopx/5auy7u/FEhm2Ico0KJj5Cpxc+2iK2w+xPJRG5zv9w1fPKizHOUNy6J5NNSxhaNMUsagGA4fTSYqLxTKsZi1G0l+k6+BJ2sqbwXOctmWxKQs+Z/Eld3J9ASAZKeX7MROGY+TiRHmpVCD5oshG1tG3xoLODQbydMgJ/x9iDpk07uD1mhZoFXvGv2oBqAjwmyjMvS5P6Ekc4sHqIz7tt6fd2y2CI9WaWrJgdCfvsoqqa7FUXPKuQ2eCkas0KRQaH8I=:J8Zt5Vm141IaBKEOFB1oBg==:UO39deoLgcS2S/Yw",
+  "groups": [
+    {
+      "id": "test-group-1",
+      "name": "Test Group",
+      "isExpanded": true,
+      "updatedAt": 1234567890
+    }
+  ]
+}

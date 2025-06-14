@@ -161,12 +161,10 @@ void main() {
 
     group('User interaction', () {
       testWidgets('should call onTap when row is tapped', (WidgetTester tester) async {
-        bool tapCalled = false;
-
         await tester.pumpWidget(createTestWidget(
           service: testService,
           displayState: emptyDisplayState,
-          onTap: () => tapCalled = true,
+          onTap: () {},
         ));
 
         await tester.tap(find.byType(DataTable));

@@ -12,16 +12,41 @@ import 'package:libreotp/presentation/state/otp_state.dart';
 class MockStorageRepository extends StorageRepository {
   List<Group> _groups = [];
   List<OtpService> _services = [];
+  bool shouldSimulateFileNotExists = false;
+  bool shouldThrowException = false;
 
   @override
-  Future<AppData> loadData() async {
+  Future<AppData> loadData({String? password}) async {
+    if (shouldThrowException) {
+      throw Exception('Test exception');
+    }
+    // Add a small delay to simulate real behavior but keep it short for tests
+    await Future.delayed(const Duration(milliseconds: 5));
     return AppData(groups: _groups, services: _services);
   }
 
   @override
   Future<File> getLocalFile() async {
-    // Return a mock file for testing
-    return File('/test/path/data.json');
+    // Use a real temporary file for testing to avoid mocking complexity
+    final tempDir = Directory.systemTemp;
+    final testFile = File('${tempDir.path}/test_data.json');
+    
+    if (!shouldSimulateFileNotExists) {
+      // Create the file with test data
+      await testFile.writeAsString('''
+{
+  "groups": [],
+  "services": []
+}
+''');
+    } else {
+      // Ensure file doesn't exist
+      if (await testFile.exists()) {
+        await testFile.delete();
+      }
+    }
+    
+    return testFile;
   }
 
   // Test helper methods
@@ -52,20 +77,25 @@ void main() {
     late MockOtpGenerator mockGenerator;
     late OtpState otpState;
 
-    setUp(() {
+    setUp(() async {
       mockRepository = MockStorageRepository();
       mockGenerator = MockOtpGenerator();
       otpState = OtpState(mockRepository, mockGenerator);
+      // Wait for async initialization to complete before running tests
+      await Future.delayed(const Duration(milliseconds: 50));
     });
 
-    tearDown(() {
+    tearDown(() async {
+      // Give any pending async operations a chance to complete before disposing
+      await Future.delayed(const Duration(milliseconds: 10));
       otpState.dispose();
+      // Give a moment for disposal to complete
+      await Future.delayed(const Duration(milliseconds: 10));
     });
 
     group('Initialization', () {
-      test('should eventually finish loading', () async {
-        // Wait for async initialization to complete
-        await Future.delayed(const Duration(milliseconds: 10));
+      test('should eventually finish loading', () {
+        // Initialization already completed in setUp
         expect(otpState.isLoading, isFalse);
       });
 

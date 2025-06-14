@@ -1,10 +1,13 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import '../../data/models/otp_service.dart';
 import '../../data/models/group.dart';
 import '../../data/repositories/storage_repository.dart';
 import '../../domain/services/otp_service.dart';
 import '../../utils/clipboard_utils.dart';
+import '../../services/twofas_decryption_service.dart';
+import '../../services/secure_storage_service.dart';
 import 'otp_display_state.dart';
 
 class OtpState extends ChangeNotifier {
@@ -20,6 +23,8 @@ class OtpState extends ChangeNotifier {
   final Map<String, OtpDisplayState> _otpDisplayStates = {};
   String _dataDirectory = '';
   bool _isLoading = true;
+  bool _requiresPassword = false;
+  String? _encryptionError;
 
   OtpState(this._storageRepository, this._otpGenerator) {
     _initializeData();
@@ -32,6 +37,8 @@ class OtpState extends ChangeNotifier {
   bool get showNotification => _showNotification;
   String get dataDirectory => _dataDirectory;
   bool get isLoading => _isLoading;
+  bool get requiresPassword => _requiresPassword;
+  String? get encryptionError => _encryptionError;
 
   OtpDisplayState getOtpDisplayState(String serviceKey) {
     return _otpDisplayStates[serviceKey] ?? OtpDisplayState.empty;
@@ -62,20 +69,94 @@ class OtpState extends ChangeNotifier {
   // Methods
   Future<void> _initializeData() async {
     _isLoading = true;
+    _requiresPassword = false;
+    _encryptionError = null;
     notifyListeners();
 
-    final data = await _storageRepository.loadData();
-    _services = data.services;
-    _groups = data.groups;
+    try {
+      // Check if file exists and if it's encrypted
+      final file = await _storageRepository.getLocalFile();
+      _dataDirectory = file.parent.path;
 
-    // Get the data directory path
-    final file = await _storageRepository.getLocalFile();
-    _dataDirectory = file.parent.path;
+      if (await file.exists()) {
+        final contents = await file.readAsString();
+        final jsonData = jsonDecode(contents) as Map<String, dynamic>;
+        
+        if (TwoFasDecryptionService.isEncrypted(jsonData)) {
+          // Try to load with stored password first
+          try {
+            final data = await _storageRepository.loadData();
+            _services = data.services;
+            _groups = data.groups;
+            _groupedServices = _groupServicesByGroup();
+            _isLoading = false;
+            notifyListeners();
+            return;
+          } catch (e) {
+            // If stored password failed, require manual password entry
+            if (e.toString().contains('Password required')) {
+              _requiresPassword = true;
+              _isLoading = false;
+              notifyListeners();
+              return;
+            } else {
+              // Other errors (like wrong stored password) should be handled
+              _encryptionError = 'Failed to decrypt backup: ${e.toString()}';
+              _requiresPassword = true;
+              _isLoading = false;
+              notifyListeners();
+              return;
+            }
+          }
+        }
+      }
 
-    _groupedServices = _groupServicesByGroup();
+      final data = await _storageRepository.loadData();
+      _services = data.services;
+      _groups = data.groups;
+      _groupedServices = _groupServicesByGroup();
+    } catch (e) {
+      _encryptionError = 'Error loading data: $e';
+      debugPrint(_encryptionError);
+    }
 
     _isLoading = false;
     notifyListeners();
+  }
+
+  Future<void> loadDataWithPassword(String password) async {
+    _isLoading = true;
+    _encryptionError = null;
+    notifyListeners();
+
+    try {
+      final data = await _storageRepository.loadData(password: password);
+      _services = data.services;
+      _groups = data.groups;
+      _groupedServices = _groupServicesByGroup();
+      _requiresPassword = false;
+    } catch (e) {
+      _encryptionError = e.toString();
+      debugPrint('Error loading encrypted data: $e');
+    }
+
+    _isLoading = false;
+    notifyListeners();
+  }
+
+  void retryDataLoad() {
+    _initializeData();
+  }
+
+  Future<void> clearStoredPassword() async {
+    try {
+      await SecureStorageService.clearStoredPassword();
+      _requiresPassword = true;
+      _encryptionError = null;
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error clearing stored password: $e');
+    }
   }
 
   void setSearchQuery(String query) {

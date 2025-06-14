@@ -39,6 +39,10 @@ dependencies:
   faker: ^2.2.0
   base32: ^2.1.3
   provider: ^6.1.4
+  pointycastle: ^3.9.1
+  crypto: ^3.0.5
+  flutter_secure_storage: ^9.2.2
+  shared_preferences: ^2.3.3
 
 dev_dependencies:
   flutter_test:
@@ -50,6 +54,17 @@ dev_dependencies:
   # package. See that file for information about deactivating specific lint
   # rules and activating additional ones.
   flutter_lints: ^5.0.0
+
+# TODO: Remove this dependency override once https://github.com/juliansteenbakker/flutter_secure_storage/pull/923 is merged
+# Temporary fix for Linux compilation issue with flutter_secure_storage_linux
+# This overrides the problematic dependency with a patched version
+dependency_overrides:
+  flutter_secure_storage_linux:
+    git:
+      url: https://github.com/m-berto/flutter_secure_storage.git
+      ref: patch-2
+      path: flutter_secure_storage_linux
+  flutter_secure_storage_platform_interface: 2.0.0
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

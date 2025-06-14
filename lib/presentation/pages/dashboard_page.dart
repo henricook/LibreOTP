@@ -5,6 +5,7 @@ import '../state/otp_state.dart';
 import '../widgets/search_bar.dart';
 import '../widgets/otp_table.dart';
 import '../widgets/notification_toast.dart';
+import '../widgets/password_dialog.dart';
 import 'about_page.dart';
 import 'data_directory_page.dart';
 
@@ -23,6 +24,35 @@ class _DashboardPageState extends State<DashboardPage> {
   void initState() {
     super.initState();
     _searchController.addListener(_updateSearchQuery);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _checkForPasswordRequirement();
+    });
+  }
+
+  void _checkForPasswordRequirement() {
+    final otpState = Provider.of<OtpState>(context, listen: false);
+    if (otpState.requiresPassword) {
+      _showPasswordDialog();
+    }
+  }
+
+  void _showPasswordDialog() async {
+    final otpState = Provider.of<OtpState>(context, listen: false);
+    
+    final password = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => PasswordDialog(
+        errorMessage: otpState.encryptionError,
+      ),
+    );
+
+    if (password != null && mounted) {
+      await otpState.loadDataWithPassword(password);
+      if (otpState.encryptionError != null && mounted) {
+        _showPasswordDialog(); // Show dialog again with error
+      }
+    }
   }
 
   @override
@@ -99,6 +129,70 @@ class _DashboardPageState extends State<DashboardPage> {
         builder: (context, otpState, child) {
           if (otpState.isLoading) {
             return const Center(child: CircularProgressIndicator());
+          }
+
+          if (otpState.requiresPassword) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.lock, size: 64, color: Colors.grey),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Encrypted Backup Detected',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Please provide the password to decrypt your backup.',
+                    style: TextStyle(color: Colors.grey),
+                  ),
+                  const SizedBox(height: 24),
+                  ElevatedButton.icon(
+                    onPressed: _showPasswordDialog,
+                    icon: const Icon(Icons.lock_open),
+                    label: const Text('Enter Password'),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          if (otpState.encryptionError != null) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.error, size: 64, color: Colors.red),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Failed to Load Backup',
+                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    otpState.encryptionError!,
+                    style: const TextStyle(color: Colors.grey),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      ElevatedButton(
+                        onPressed: () => otpState.retryDataLoad(),
+                        child: const Text('Retry'),
+                      ),
+                      const SizedBox(width: 16),
+                      OutlinedButton(
+                        onPressed: () => otpState.clearStoredPassword(),
+                        child: const Text('Use Different Password'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            );
           }
 
           return Stack(

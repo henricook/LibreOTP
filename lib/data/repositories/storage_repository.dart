@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/otp_service.dart';
 import '../models/group.dart';
+import '../../services/twofas_decryption_service.dart';
+import '../../services/secure_storage_service.dart';
 
 class AppData {
   final List<OtpService> services;
@@ -31,33 +33,66 @@ class StorageRepository {
     return File('$path/$_dataFileName');
   }
 
-  Future<AppData> loadData() async {
+  Future<AppData> loadData({String? password}) async {
     try {
       final file = await getLocalFile();
       if (await file.exists()) {
         String contents = await file.readAsString();
         Map<String, dynamic> jsonData = jsonDecode(contents);
 
-        // Parse services
-        List<OtpService> services = (jsonData['services'] as List? ?? [])
-            .map((item) => OtpService.fromJson(item))
-            .toList();
+        // Check if backup is encrypted
+        if (TwoFasDecryptionService.isEncrypted(jsonData)) {
+          // Try provided password first, then stored password
+          String? effectivePassword = password ?? await SecureStorageService.getStoredPassword(contents);
+          
+          if (effectivePassword == null) {
+            throw ArgumentError('Password required for encrypted backup');
+          }
+          
+          // Decrypt the services
+          final decryptedServices = await TwoFasDecryptionService.decryptBackup(jsonData, effectivePassword);
+          final servicesData = jsonDecode(decryptedServices) as List;
+          
+          // If decryption succeeded and password was provided manually, store it securely
+          if (password != null) {
+            try {
+              await SecureStorageService.storePassword(password, contents);
+            } catch (e) {
+              debugPrint('Warning: Failed to store password securely: $e');
+              // Don't fail the whole operation if password storage fails
+            }
+          }
+          
+          // Parse decrypted services
+          List<OtpService> services = servicesData
+              .map((item) => OtpService.fromJson(item))
+              .toList();
 
-        // Parse groups
-        List<Group> groups = (jsonData['groups'] as List? ?? [])
-            .map((item) => Group.fromJson(item))
-            .toList();
+          // Parse groups (these are not encrypted in 2FAS format)
+          List<Group> groups = (jsonData['groups'] as List? ?? [])
+              .map((item) => Group.fromJson(item))
+              .toList();
 
-        return AppData(services: services, groups: groups);
+          return AppData(services: services, groups: groups);
+        } else {
+          // Handle unencrypted backup
+          List<OtpService> services = (jsonData['services'] as List? ?? [])
+              .map((item) => OtpService.fromJson(item))
+              .toList();
+
+          List<Group> groups = (jsonData['groups'] as List? ?? [])
+              .map((item) => Group.fromJson(item))
+              .toList();
+
+          return AppData(services: services, groups: groups);
+        }
       } else {
-        // Handle the case where the file does not exist
         debugPrint('Data file not found at: ${await getLocalFile()}');
         return AppData(services: [], groups: []);
       }
     } catch (e) {
-      // Handle errors
       debugPrint('Error loading data: $e');
-      return AppData(services: [], groups: []);
+      rethrow; // Re-throw to allow proper error handling upstream
     }
   }
 
