@@ -30,9 +30,9 @@ LibreOTP is a desktop OTP code generator that works with 2FAS exports. 2FAS is a
 - 2FAS services may contain additional metadata that can be leveraged
 
 ## Data File Paths
-- Windows: `C:\Users\<Username>\Documents\LibreOTP\data.json`
-- MacOS: `/Users/<Username>/Library/Containers/com.henricook.libreotp/Data/Documents/LibreOTP/data.json`
-- Linux: `/home/<Username>/Documents/LibreOTP/data.json`
+- Windows: `%APPDATA%\libreotp\data.json` (e.g., `C:\Users\<Username>\AppData\Roaming\libreotp\data.json`)
+- MacOS: `~/Library/Application Support/com.henricook.libreotp/data.json`
+- Linux: `~/.local/share/libreotp/data.json`
 
 ## Development Workflow
 1. Put a valid `data.json` file in the appropriate location (see paths above)

@@ -85,6 +85,80 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
+  void _showImportDialog(BuildContext context) async {
+    final otpState = Provider.of<OtpState>(context, listen: false);
+    final messenger = ScaffoldMessenger.of(context);
+    
+    // Show confirmation dialog if there's existing data
+    if (otpState.hasExistingData) {
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Import New Backup'),
+          content: const Text(
+            'This will replace your current data with the imported backup. Are you sure you want to continue?'
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(true),
+              child: const Text('Import'),
+            ),
+          ],
+        ),
+      );
+      
+      if (confirm != true) return;
+    }
+    
+    // Open file picker
+    final success = await otpState.reimportData();
+    
+    if (success && mounted) {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text('Backup imported successfully!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } else if (otpState.requiresPassword && mounted) {
+      // Handle encrypted backup - use the already selected file
+      _showPasswordDialogForSelectedFile();
+    }
+  }
+
+  void _showPasswordDialogForSelectedFile() async {
+    final otpState = Provider.of<OtpState>(context, listen: false);
+    final messenger = ScaffoldMessenger.of(context);
+    
+    if (!mounted) return;
+    
+    final password = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => PasswordDialog(
+        errorMessage: otpState.encryptionError,
+      ),
+    );
+
+    if (password != null && mounted) {
+      final success = await otpState.importSelectedFileWithPassword(password);
+      if (success && mounted) {
+        messenger.showSnackBar(
+          const SnackBar(
+            content: Text('Encrypted backup imported successfully!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else if (otpState.encryptionError != null && mounted) {
+        _showPasswordDialogForSelectedFile(); // Show dialog again with error for same file
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -101,6 +175,14 @@ class _DashboardPageState extends State<DashboardPage> {
                   return Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
+                      ListTile(
+                        leading: const Icon(Icons.upload_file),
+                        title: const Text('Import 2FAS Backup'),
+                        onTap: () {
+                          Navigator.of(context).pop();
+                          _showImportDialog(context);
+                        },
+                      ),
                       ListTile(
                         leading: const Icon(Icons.folder_open),
                         title: const Text('Show Data Directory'),
@@ -203,7 +285,50 @@ class _DashboardPageState extends State<DashboardPage> {
                         onPressed: () => otpState.clearStoredPassword(),
                         child: const Text('Use Different Password'),
                       ),
+                      const SizedBox(width: 16),
+                      ElevatedButton.icon(
+                        onPressed: () => _showImportDialog(context),
+                        icon: const Icon(Icons.upload_file),
+                        label: const Text('Import New Backup'),
+                      ),
                     ],
+                  ),
+                ],
+              ),
+            );
+          }
+
+          // Show import UI when no data exists
+          if (!otpState.hasExistingData && otpState.services.isEmpty) {
+            return Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Icon(Icons.security, size: 64, color: Colors.blue),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Welcome to LibreOTP',
+                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Import your 2FAS backup to get started',
+                    style: TextStyle(fontSize: 16, color: Colors.grey),
+                  ),
+                  const SizedBox(height: 24),
+                  ElevatedButton.icon(
+                    onPressed: () => _showImportDialog(context),
+                    icon: const Icon(Icons.upload_file),
+                    label: const Text('Import 2FAS Backup'),
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    'Export your data from the 2FAS app and select the JSON file',
+                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                    textAlign: TextAlign.center,
                   ),
                 ],
               ),

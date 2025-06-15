@@ -26,6 +26,8 @@ class OtpState extends ChangeNotifier {
   bool _requiresPassword = false;
   String? _encryptionError;
   bool _disposed = false;
+  bool _hasExistingData = false;
+  String? _selectedFilePath;
   
   // Helper method to yield control to allow UI updates
   Future<void> _yieldToUI([int milliseconds = 16]) async {
@@ -58,6 +60,8 @@ class OtpState extends ChangeNotifier {
   bool get isLoading => _isLoading;
   bool get requiresPassword => _requiresPassword;
   String? get encryptionError => _encryptionError;
+  bool get hasExistingData => _hasExistingData;
+  String? get selectedFilePath => _selectedFilePath;
 
   OtpDisplayState getOtpDisplayState(String serviceKey) {
     return _otpDisplayStates[serviceKey] ?? OtpDisplayState.empty;
@@ -125,6 +129,7 @@ class OtpState extends ChangeNotifier {
       // Check if file exists and if it's encrypted
       final file = await _storageRepository.getLocalFile();
       _dataDirectory = file.parent.path;
+      _hasExistingData = await _storageRepository.hasExistingData();
       
       // Yield after file system access to keep UI responsive
       if (withUIYields) await _yieldToUI(16);
@@ -351,5 +356,61 @@ class OtpState extends ChangeNotifier {
         notifyListeners();
       }
     });
+  }
+
+  /// Opens a file picker for the user to select a 2FAS backup file
+  Future<String?> pickBackupFile() async {
+    try {
+      return await _storageRepository.pickBackupFile();
+    } catch (e) {
+      _encryptionError = 'Failed to open file picker: $e';
+      notifyListeners();
+      return null;
+    }
+  }
+
+  /// Imports a 2FAS backup file and replaces current data
+  Future<bool> importBackupFile(String filePath, {String? password}) async {
+    _isLoading = true;
+    _encryptionError = null;
+    notifyListeners();
+
+    try {
+      final data = await _storageRepository.importBackupFile(filePath, password: password);
+      _services = data.services;
+      _groups = data.groups;
+      _groupedServices = _groupServicesByGroup();
+      _hasExistingData = true;
+      _requiresPassword = false;
+      _isLoading = false;
+      notifyListeners();
+      return true;
+    } catch (e) {
+      if (e.toString().contains('Password required')) {
+        _requiresPassword = true;
+        _encryptionError = null;
+      } else {
+        _encryptionError = 'Failed to import backup: $e';
+      }
+      _isLoading = false;
+      notifyListeners();
+      return false;
+    }
+  }
+
+  /// Reimports data by opening file picker and importing selected file
+  Future<bool> reimportData() async {
+    final filePath = await pickBackupFile();
+    if (filePath != null) {
+      _selectedFilePath = filePath;
+      return await importBackupFile(filePath);
+    }
+    return false;
+  }
+
+  /// Imports the currently selected file with a password (for encrypted backups)
+  Future<bool> importSelectedFileWithPassword(String password) async {
+    if (_selectedFilePath == null) return false;
+    return await importBackupFile(_selectedFilePath!, password: password);
   }
 }
