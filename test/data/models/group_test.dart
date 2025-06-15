@@ -33,10 +33,12 @@ void main() {
 
       final json = group.toJson();
 
-      expect(json, equals({
-        'id': 'test-id',
-        'name': 'Test Group',
-      }));
+      expect(
+          json,
+          equals({
+            'id': 'test-id',
+            'name': 'Test Group',
+          }));
     });
 
     test('should handle equality correctly', () {

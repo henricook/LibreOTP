@@ -7,7 +7,8 @@ void main() {
   group('ClipboardUtils', () {
     setUp(() {
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(SystemChannels.platform, (MethodCall methodCall) async {
+          .setMockMethodCallHandler(SystemChannels.platform,
+              (MethodCall methodCall) async {
         if (methodCall.method == 'Clipboard.setData') {
           return null; // Simulate successful clipboard operation
         }
@@ -23,14 +24,14 @@ void main() {
     group('copyToClipboard', () {
       test('should copy text to clipboard successfully', () async {
         const testText = '123456';
-        
+
         // This should not throw an exception
         expect(() => ClipboardUtils.copyToClipboard(testText), returnsNormally);
       });
 
       test('should handle empty text', () async {
         const testText = '';
-        
+
         expect(() => ClipboardUtils.copyToClipboard(testText), returnsNormally);
       });
 
@@ -41,25 +42,26 @@ void main() {
 
       test('should handle special characters', () async {
         const testText = '!@#\$%^&*()_+-=[]{}|;\':",./<>?';
-        
+
         expect(() => ClipboardUtils.copyToClipboard(testText), returnsNormally);
       });
 
       test('should handle unicode characters', () async {
         const testText = '🔐🔑🔒🔓';
-        
+
         expect(() => ClipboardUtils.copyToClipboard(testText), returnsNormally);
       });
 
       test('should handle very long text', () async {
         final longText = 'A' * 10000;
-        
+
         expect(() => ClipboardUtils.copyToClipboard(longText), returnsNormally);
       });
     });
 
     group('showCopiedNotification', () {
-      testWidgets('should show notification with custom message', (WidgetTester tester) async {
+      testWidgets('should show notification with custom message',
+          (WidgetTester tester) async {
         await tester.pumpWidget(
           MaterialApp(
             home: Scaffold(
@@ -67,7 +69,8 @@ void main() {
                 builder: (BuildContext context) {
                   return ElevatedButton(
                     onPressed: () {
-                      ClipboardUtils.showCopiedNotification(context, 'Custom message');
+                      ClipboardUtils.showCopiedNotification(
+                          context, 'Custom message');
                     },
                     child: const Text('Show Notification'),
                   );
@@ -83,7 +86,8 @@ void main() {
         expect(find.text('Custom message'), findsOneWidget);
       });
 
-      testWidgets('should show notification with default message', (WidgetTester tester) async {
+      testWidgets('should show notification with default message',
+          (WidgetTester tester) async {
         await tester.pumpWidget(
           MaterialApp(
             home: Scaffold(
@@ -91,7 +95,8 @@ void main() {
                 builder: (BuildContext context) {
                   return ElevatedButton(
                     onPressed: () {
-                      ClipboardUtils.showCopiedNotification(context, 'Copied to clipboard!');
+                      ClipboardUtils.showCopiedNotification(
+                          context, 'Copied to clipboard!');
                     },
                     child: const Text('Show Notification'),
                   );
@@ -133,7 +138,8 @@ void main() {
       });
 
       testWidgets('should handle long message', (WidgetTester tester) async {
-        const longMessage = 'This is a very long notification message that should still be handled properly by the notification system';
+        const longMessage =
+            'This is a very long notification message that should still be handled properly by the notification system';
 
         await tester.pumpWidget(
           MaterialApp(
@@ -142,7 +148,8 @@ void main() {
                 builder: (BuildContext context) {
                   return ElevatedButton(
                     onPressed: () {
-                      ClipboardUtils.showCopiedNotification(context, longMessage);
+                      ClipboardUtils.showCopiedNotification(
+                          context, longMessage);
                     },
                     child: const Text('Show Notification'),
                   );
@@ -158,7 +165,8 @@ void main() {
         expect(find.text(longMessage), findsOneWidget);
       });
 
-      testWidgets('should handle multiple notifications', (WidgetTester tester) async {
+      testWidgets('should handle multiple notifications',
+          (WidgetTester tester) async {
         await tester.pumpWidget(
           MaterialApp(
             home: Scaffold(
@@ -168,13 +176,15 @@ void main() {
                     children: [
                       ElevatedButton(
                         onPressed: () {
-                          ClipboardUtils.showCopiedNotification(context, 'First notification');
+                          ClipboardUtils.showCopiedNotification(
+                              context, 'First notification');
                         },
                         child: const Text('Show First'),
                       ),
                       ElevatedButton(
                         onPressed: () {
-                          ClipboardUtils.showCopiedNotification(context, 'Second notification');
+                          ClipboardUtils.showCopiedNotification(
+                              context, 'Second notification');
                         },
                         child: const Text('Show Second'),
                       ),
@@ -198,7 +208,8 @@ void main() {
     });
 
     group('Integration tests', () {
-      testWidgets('should copy and show notification together', (WidgetTester tester) async {
+      testWidgets('should copy and show notification together',
+          (WidgetTester tester) async {
         const testCode = '123456';
 
         await tester.pumpWidget(
@@ -209,7 +220,8 @@ void main() {
                   return ElevatedButton(
                     onPressed: () {
                       ClipboardUtils.copyToClipboard(testCode);
-                      ClipboardUtils.showCopiedNotification(context, 'OTP Code Copied!');
+                      ClipboardUtils.showCopiedNotification(
+                          context, 'OTP Code Copied!');
                     },
                     child: const Text('Copy OTP'),
                   );

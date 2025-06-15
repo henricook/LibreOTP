@@ -5,6 +5,7 @@ class OtpService {
   final OtpConfig otp;
   final OrderInfo order;
   final String secret;
+  final IconInfo icon;
 
   const OtpService({
     required this.id,
@@ -13,6 +14,7 @@ class OtpService {
     required this.otp,
     required this.order,
     required this.secret,
+    this.icon = IconInfo.empty,
   });
 
   factory OtpService.fromJson(Map<String, dynamic> json) {
@@ -25,17 +27,30 @@ class OtpService {
       order: OrderInfo.fromJson(
           json['order'] is Map<String, dynamic> ? json['order'] : {}),
       secret: json['secret']?.toString() ?? '',
+      icon: json.containsKey('icon')
+          ? IconInfo.fromJson(
+              json['icon'] is Map<String, dynamic> ? json['icon'] : {})
+          : IconInfo.empty,
     );
   }
 
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'groupId': groupId,
-        'otp': otp.toJson(),
-        'order': order.toJson(),
-        'secret': secret,
-      };
+  Map<String, dynamic> toJson() {
+    final json = {
+      'id': id,
+      'name': name,
+      'groupId': groupId,
+      'otp': otp.toJson(),
+      'order': order.toJson(),
+      'secret': secret,
+    };
+
+    // Only include icon data if it's not empty
+    if (icon != IconInfo.empty) {
+      json['icon'] = icon.toJson();
+    }
+
+    return json;
+  }
 }
 
 class OtpConfig {
@@ -108,4 +123,50 @@ class OrderInfo {
   Map<String, dynamic> toJson() => {
         'position': position,
       };
+}
+
+class IconInfo {
+  final String? iconCollection;
+  final String? serviceTypeID;
+  final String? labelText;
+  final String? labelBackgroundColor;
+
+  const IconInfo({
+    this.iconCollection,
+    this.serviceTypeID,
+    this.labelText,
+    this.labelBackgroundColor,
+  });
+
+  factory IconInfo.fromJson(Map<String, dynamic> json) {
+    return IconInfo(
+      iconCollection: json['iconCollection']?.toString(),
+      serviceTypeID: json['serviceTypeID']?.toString(),
+      labelText: json['labelText']?.toString(),
+      labelBackgroundColor: json['labelBackgroundColor']?.toString(),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'iconCollection': iconCollection,
+        'serviceTypeID': serviceTypeID,
+        'labelText': labelText,
+        'labelBackgroundColor': labelBackgroundColor,
+      };
+
+  IconInfo copyWith({
+    String? iconCollection,
+    String? serviceTypeID,
+    String? labelText,
+    String? labelBackgroundColor,
+  }) {
+    return IconInfo(
+      iconCollection: iconCollection ?? this.iconCollection,
+      serviceTypeID: serviceTypeID ?? this.serviceTypeID,
+      labelText: labelText ?? this.labelText,
+      labelBackgroundColor: labelBackgroundColor ?? this.labelBackgroundColor,
+    );
+  }
+
+  static const IconInfo empty = IconInfo();
 }

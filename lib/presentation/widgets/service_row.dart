@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../data/models/otp_service.dart';
+import '../../services/twofas_icon_service.dart';
 import '../state/otp_display_state.dart';
 
 class ServiceRow extends DataRow {
@@ -8,6 +9,7 @@ class ServiceRow extends DataRow {
     required OtpService service,
     required OtpDisplayState displayState,
     required Function() onTap,
+    required double iconWidth,
     required double nameWidth,
     required double accountWidth,
     required double issuerWidth,
@@ -15,6 +17,16 @@ class ServiceRow extends DataRow {
     required double validityWidth,
   }) : super(
           cells: <DataCell>[
+            DataCell(
+              SizedBox(
+                width: iconWidth,
+                child: TwoFasIconService.buildServiceIcon(
+                  service.name,
+                  service.otp.issuer,
+                  size: 24.0,
+                ),
+              ),
+            ),
             DataCell(
               SizedBox(
                 width: nameWidth,

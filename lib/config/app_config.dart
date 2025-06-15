@@ -1,6 +1,6 @@
 class AppConfig {
   static const String appName = 'LibreOTP';
-  static const String appVersion = 'v1.1.0';
+  static const String appVersion = 'v1.2.0';
   static const String appTitle = 'LibreOTP $appVersion';
   static const String githubUrl = 'https://github.com/henricook/libreotp';
 

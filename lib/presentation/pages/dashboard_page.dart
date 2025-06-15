@@ -38,7 +38,7 @@ class _DashboardPageState extends State<DashboardPage> {
 
   void _showPasswordDialog() async {
     final otpState = Provider.of<OtpState>(context, listen: false);
-    
+
     final password = await showDialog<String>(
       context: context,
       barrierDismissible: false,
@@ -88,7 +88,7 @@ class _DashboardPageState extends State<DashboardPage> {
   void _showImportDialog(BuildContext context) async {
     final otpState = Provider.of<OtpState>(context, listen: false);
     final messenger = ScaffoldMessenger.of(context);
-    
+
     // Show confirmation dialog if there's existing data
     if (otpState.hasExistingData) {
       final confirm = await showDialog<bool>(
@@ -96,8 +96,7 @@ class _DashboardPageState extends State<DashboardPage> {
         builder: (context) => AlertDialog(
           title: const Text('Import New Backup'),
           content: const Text(
-            'This will replace your current data with the imported backup. Are you sure you want to continue?'
-          ),
+              'This will replace your current data with the imported backup. Are you sure you want to continue?'),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
@@ -110,13 +109,13 @@ class _DashboardPageState extends State<DashboardPage> {
           ],
         ),
       );
-      
+
       if (confirm != true) return;
     }
-    
+
     // Open file picker
     final success = await otpState.reimportData();
-    
+
     if (success && mounted) {
       messenger.showSnackBar(
         const SnackBar(
@@ -133,9 +132,9 @@ class _DashboardPageState extends State<DashboardPage> {
   void _showPasswordDialogForSelectedFile() async {
     final otpState = Provider.of<OtpState>(context, listen: false);
     final messenger = ScaffoldMessenger.of(context);
-    
+
     if (!mounted) return;
-    
+
     final password = await showDialog<String>(
       context: context,
       barrierDismissible: false,
@@ -162,50 +161,76 @@ class _DashboardPageState extends State<DashboardPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        title: Text(AppConfig.appTitle),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.menu),
-            onPressed: () {
-              showModalBottomSheet(
-                context: context,
-                builder: (BuildContext context) {
-                  return Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      ListTile(
-                        leading: const Icon(Icons.upload_file),
-                        title: const Text('Import 2FAS Backup'),
-                        onTap: () {
-                          Navigator.of(context).pop();
-                          _showImportDialog(context);
-                        },
-                      ),
-                      ListTile(
-                        leading: const Icon(Icons.folder_open),
-                        title: const Text('Show Data Directory'),
-                        onTap: () {
-                          Navigator.of(context).pop();
-                          _showDataDirectory(context);
-                        },
-                      ),
-                      ListTile(
-                        leading: const Icon(Icons.info),
-                        title: const Text('About'),
-                        onTap: () {
-                          Navigator.of(context).pop();
-                          _showAboutDialog(context);
-                        },
-                      ),
-                    ],
-                  );
-                },
-              );
-            },
+      appBar: PreferredSize(
+        preferredSize: const Size.fromHeight(80),
+        child: Container(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                Theme.of(context).colorScheme.primary,
+                Theme.of(context).colorScheme.primaryContainer,
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.1),
+                offset: const Offset(0, 2),
+                blurRadius: 4,
+              ),
+            ],
           ),
-        ],
+          child: AppBar(
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            centerTitle: false,
+            title: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Text(
+                  AppConfig.appTitle,
+                  style: const TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                Consumer<OtpState>(
+                  builder: (context, otpState, child) {
+                    return Text(
+                      '${otpState.services.length} services',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.white.withValues(alpha: 0.8),
+                        fontWeight: FontWeight.normal,
+                      ),
+                    );
+                  },
+                ),
+              ],
+            ),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.upload_file, color: Colors.white),
+                tooltip: 'Import 2FAS Backup',
+                onPressed: () => _showImportDialog(context),
+              ),
+              IconButton(
+                icon: const Icon(Icons.folder_open, color: Colors.white),
+                tooltip: 'Show Data Directory',
+                onPressed: () => _showDataDirectory(context),
+              ),
+              IconButton(
+                icon: const Icon(Icons.info_outline, color: Colors.white),
+                tooltip: 'About',
+                onPressed: () => _showAboutDialog(context),
+              ),
+              const SizedBox(width: 8),
+            ],
+          ),
+        ),
       ),
       body: Consumer<OtpState>(
         builder: (context, otpState, child) {
@@ -321,7 +346,8 @@ class _DashboardPageState extends State<DashboardPage> {
                     icon: const Icon(Icons.upload_file),
                     label: const Text('Import 2FAS Backup'),
                     style: ElevatedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 24, vertical: 12),
                     ),
                   ),
                   const SizedBox(height: 16),

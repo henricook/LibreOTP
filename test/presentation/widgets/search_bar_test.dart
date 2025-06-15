@@ -10,7 +10,7 @@ void main() {
       VoidCallback? onClear,
     }) {
       final controller = TextEditingController(text: initialValue);
-      
+
       return MaterialApp(
         home: Scaffold(
           body: SearchBarWidget(
@@ -23,7 +23,8 @@ void main() {
     }
 
     group('Basic rendering', () {
-      testWidgets('should render search input field', (WidgetTester tester) async {
+      testWidgets('should render search input field',
+          (WidgetTester tester) async {
         await tester.pumpWidget(createTestWidget());
 
         expect(find.byType(TextField), findsOneWidget);
@@ -37,7 +38,8 @@ void main() {
         expect(textField.controller?.text, equals('test query'));
       });
 
-      testWidgets('should handle null initial value', (WidgetTester tester) async {
+      testWidgets('should handle null initial value',
+          (WidgetTester tester) async {
         await tester.pumpWidget(createTestWidget(initialValue: null));
 
         final textField = tester.widget<TextField>(find.byType(TextField));
@@ -46,7 +48,8 @@ void main() {
     });
 
     group('User input', () {
-      testWidgets('should call onChanged when text is entered', (WidgetTester tester) async {
+      testWidgets('should call onChanged when text is entered',
+          (WidgetTester tester) async {
         String? changedValue;
 
         await tester.pumpWidget(createTestWidget(
@@ -69,7 +72,8 @@ void main() {
         expect(changedValue, anyOf(equals(''), isNull));
       });
 
-      testWidgets('should handle special characters', (WidgetTester tester) async {
+      testWidgets('should handle special characters',
+          (WidgetTester tester) async {
         String? changedValue;
 
         await tester.pumpWidget(createTestWidget(
@@ -82,19 +86,22 @@ void main() {
     });
 
     group('Clear functionality', () {
-      testWidgets('should show clear button when text is present', (WidgetTester tester) async {
+      testWidgets('should show clear button when text is present',
+          (WidgetTester tester) async {
         await tester.pumpWidget(createTestWidget(initialValue: 'test'));
 
         expect(find.byIcon(Icons.clear), findsOneWidget);
       });
 
-      testWidgets('should hide clear button when text is empty', (WidgetTester tester) async {
+      testWidgets('should hide clear button when text is empty',
+          (WidgetTester tester) async {
         await tester.pumpWidget(createTestWidget(initialValue: ''));
 
         expect(find.byIcon(Icons.clear), findsNothing);
       });
 
-      testWidgets('should call onClear when clear button is tapped', (WidgetTester tester) async {
+      testWidgets('should call onClear when clear button is tapped',
+          (WidgetTester tester) async {
         bool clearCalled = false;
 
         await tester.pumpWidget(createTestWidget(
@@ -130,7 +137,8 @@ void main() {
         expect(changedValue, equals(longText));
       });
 
-      testWidgets('should handle rapid text changes', (WidgetTester tester) async {
+      testWidgets('should handle rapid text changes',
+          (WidgetTester tester) async {
         final List<String> changedValues = [];
 
         await tester.pumpWidget(createTestWidget(

@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 class PasswordDialog extends StatefulWidget {
   final String? errorMessage;
-  
+
   const PasswordDialog({super.key, this.errorMessage});
 
   @override
@@ -60,7 +60,10 @@ class _PasswordDialogState extends State<PasswordDialog> {
                 color: Theme.of(context).colorScheme.errorContainer,
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(
-                  color: Theme.of(context).colorScheme.error.withValues(alpha: 0.3),
+                  color: Theme.of(context)
+                      .colorScheme
+                      .error
+                      .withValues(alpha: 0.3),
                 ),
               ),
               child: Row(
@@ -108,18 +111,20 @@ class _PasswordDialogState extends State<PasswordDialog> {
   void _submitPassword() {
     final password = _passwordController.text.trim();
     if (password.isEmpty) return;
-    
+
     setState(() {
       _isLoading = true;
     });
-    
+
     Navigator.of(context).pop(password);
   }
 
   String _getErrorMessage(String error) {
-    if (error.contains('Invalid password') || error.contains('Decryption failed')) {
+    if (error.contains('Invalid password') ||
+        error.contains('Decryption failed')) {
       return 'Incorrect password. Please try again.';
-    } else if (error.contains('Invalid vault file') || error.contains('Invalid encrypted backup format')) {
+    } else if (error.contains('Invalid vault file') ||
+        error.contains('Invalid encrypted backup format')) {
       return 'This backup file appears to be corrupted or invalid.';
     } else if (error.contains('Password required')) {
       return 'A password is required to decrypt this backup.';

@@ -30,7 +30,7 @@ class MockStorageRepository extends StorageRepository {
     // Use a real temporary file for testing to avoid mocking complexity
     final tempDir = Directory.systemTemp;
     final testFile = File('${tempDir.path}/test_data.json');
-    
+
     if (!shouldSimulateFileNotExists) {
       // Create the file with test data
       await testFile.writeAsString('''
@@ -45,7 +45,7 @@ class MockStorageRepository extends StorageRepository {
         await testFile.delete();
       }
     }
-    
+
     return testFile;
   }
 
@@ -123,12 +123,14 @@ void main() {
         expect(displayState, equals(OtpDisplayState.empty));
       });
 
-      testWidgets('should handle generateOtp method calls', (WidgetTester tester) async {
+      testWidgets('should handle generateOtp method calls',
+          (WidgetTester tester) async {
         await tester.pumpWidget(MaterialApp(home: Container()));
         final context = tester.element(find.byType(Container));
 
-        expect(() => otpState.generateOtp('invalid-group', 0, context), returnsNormally);
-        
+        expect(() => otpState.generateOtp('invalid-group', 0, context),
+            returnsNormally);
+
         // Pump the timer to completion to avoid test failures
         await tester.pumpAndSettle();
       });

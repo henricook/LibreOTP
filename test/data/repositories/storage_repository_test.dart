@@ -5,10 +5,9 @@ import 'package:libreotp/data/repositories/storage_repository.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
-  
+
   group('StorageRepository', () {
-    setUp(() {
-    });
+    setUp(() {});
 
     group('Data models validation', () {
       test('should create valid Group from JSON', () {
@@ -294,7 +293,8 @@ void main() {
         }
 
         // Sort by position
-        groupedServices['group1']!.sort((a, b) => a.order.position.compareTo(b.order.position));
+        groupedServices['group1']!
+            .sort((a, b) => a.order.position.compareTo(b.order.position));
 
         expect(groupedServices['group1']![0].name, equals('Service A'));
         expect(groupedServices['group1']![1].name, equals('Service B'));

@@ -72,7 +72,8 @@ void main() {
         const service2 = OtpService(
           id: 'test-service-2',
           name: 'Test Service 2',
-          secret: 'KRUGKIDROVUWG2ZAMJZG653OEBYB64DTLKXWK3DPMV2HK4RAHUQG', // Different secret
+          secret:
+              'KRUGKIDROVUWG2ZAMJZG653OEBYB64DTLKXWK3DPMV2HK4RAHUQG', // Different secret
           otp: OtpConfig(
             account: 'test2@example.com',
             issuer: 'Test Issuer',
@@ -193,7 +194,8 @@ void main() {
           order: OrderInfo(position: 0),
         );
 
-        expect(() => otpGenerator.generateOtp(service), throwsA(isA<Exception>()));
+        expect(
+            () => otpGenerator.generateOtp(service), throwsA(isA<Exception>()));
       });
     });
 

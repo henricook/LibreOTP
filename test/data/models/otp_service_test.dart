@@ -212,13 +212,15 @@ void main() {
 
       final json = config.toJson();
 
-      expect(json, equals({
-        'account': 'test@example.com',
-        'issuer': 'Test Issuer',
-        'algorithm': 'SHA1',
-        'digits': 6,
-        'period': 30,
-      }));
+      expect(
+          json,
+          equals({
+            'account': 'test@example.com',
+            'issuer': 'Test Issuer',
+            'algorithm': 'SHA1',
+            'digits': 6,
+            'period': 30,
+          }));
     });
 
     test('should handle equality correctly', () {

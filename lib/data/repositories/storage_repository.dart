@@ -43,16 +43,18 @@ class StorageRepository {
         // Check if backup is encrypted
         if (TwoFasDecryptionService.isEncrypted(jsonData)) {
           // Try provided password first, then stored password
-          String? effectivePassword = password ?? await SecureStorageService.getStoredPassword(contents);
-          
+          String? effectivePassword = password ??
+              await SecureStorageService.getStoredPassword(contents);
+
           if (effectivePassword == null) {
             throw ArgumentError('Password required for encrypted backup');
           }
-          
+
           // Decrypt the services
-          final decryptedServices = await TwoFasDecryptionService.decryptBackup(jsonData, effectivePassword);
+          final decryptedServices = await TwoFasDecryptionService.decryptBackup(
+              jsonData, effectivePassword);
           final servicesData = jsonDecode(decryptedServices) as List;
-          
+
           // If decryption succeeded and password was provided manually, store it securely
           if (password != null) {
             try {
@@ -62,11 +64,10 @@ class StorageRepository {
               // Don't fail the whole operation if password storage fails
             }
           }
-          
+
           // Parse decrypted services
-          List<OtpService> services = servicesData
-              .map((item) => OtpService.fromJson(item))
-              .toList();
+          List<OtpService> services =
+              servicesData.map((item) => OtpService.fromJson(item)).toList();
 
           // Parse groups (these are not encrypted in 2FAS format)
           List<Group> groups = (jsonData['groups'] as List? ?? [])
@@ -115,7 +116,7 @@ class StorageRepository {
     try {
       FilePickerResult? result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['json','2fas'],
+        allowedExtensions: ['json', '2fas'],
         dialogTitle: 'Select 2FAS backup file',
       );
 
@@ -140,7 +141,7 @@ class StorageRepository {
       // Read and validate the source file
       String contents = await sourceFile.readAsString();
       Map<String, dynamic> jsonData = jsonDecode(contents);
-      
+
       // Validate it's a 2FAS backup file by checking for expected structure
       if (!_isValid2FasBackup(jsonData)) {
         throw ArgumentError('Selected file is not a valid 2FAS backup');
@@ -151,7 +152,7 @@ class StorageRepository {
 
       // If parsing succeeded, copy the file to app storage
       await _copyToAppStorage(sourceFile);
-      
+
       debugPrint('Successfully imported backup from: $filePath');
       return testData;
     } catch (e) {
@@ -173,26 +174,28 @@ class StorageRepository {
 
   bool _isValid2FasBackup(Map<String, dynamic> jsonData) {
     // Check for 2FAS backup structure
-    return jsonData.containsKey('services') || 
-           jsonData.containsKey('servicesEncrypted') ||
-           (jsonData.containsKey('version') && jsonData.containsKey('schemaVersion'));
+    return jsonData.containsKey('services') ||
+        jsonData.containsKey('servicesEncrypted') ||
+        (jsonData.containsKey('version') &&
+            jsonData.containsKey('schemaVersion'));
   }
 
-  Future<AppData> _parseBackupData(Map<String, dynamic> jsonData, String contents, String? password) async {
+  Future<AppData> _parseBackupData(
+      Map<String, dynamic> jsonData, String contents, String? password) async {
     // Check if backup is encrypted
     if (TwoFasDecryptionService.isEncrypted(jsonData)) {
       if (password == null) {
         throw ArgumentError('Password required for encrypted backup');
       }
-      
+
       // Decrypt the services
-      final decryptedServices = await TwoFasDecryptionService.decryptBackup(jsonData, password);
+      final decryptedServices =
+          await TwoFasDecryptionService.decryptBackup(jsonData, password);
       final servicesData = jsonDecode(decryptedServices) as List;
-      
+
       // Parse decrypted services
-      List<OtpService> services = servicesData
-          .map((item) => OtpService.fromJson(item))
-          .toList();
+      List<OtpService> services =
+          servicesData.map((item) => OtpService.fromJson(item)).toList();
 
       // Parse groups (these are not encrypted in 2FAS format)
       List<Group> groups = (jsonData['groups'] as List? ?? [])

@@ -37,6 +37,15 @@ class OtpTable extends StatelessWidget {
   List<DataColumn> _buildColumns() {
     return const <DataColumn>[
       DataColumn(
+        label: SizedBox(
+          width: 40,
+          child: Text(
+            '',
+            style: TextStyle(fontWeight: FontWeight.bold),
+          ),
+        ),
+      ),
+      DataColumn(
         label: Expanded(
           child: Text(
             'Name',
@@ -77,8 +86,9 @@ class OtpTable extends StatelessWidget {
     final constraints = BoxConstraints(
       maxWidth: MediaQuery.of(context).size.width,
     );
-    final nameWidth = constraints.maxWidth * 0.25;
-    final accountWidth = constraints.maxWidth * 0.25;
+    final iconWidth = 40.0;
+    final nameWidth = constraints.maxWidth * 0.22;
+    final accountWidth = constraints.maxWidth * 0.22;
     final issuerWidth = constraints.maxWidth * 0.1;
     final otpWidth = constraints.maxWidth * 0.1;
     final validityWidth = constraints.maxWidth * 0.05;
@@ -102,6 +112,7 @@ class OtpTable extends StatelessWidget {
             service: service,
             displayState: displayState,
             onTap: () => onRowTap(entry.key, i),
+            iconWidth: iconWidth,
             nameWidth: nameWidth,
             accountWidth: accountWidth,
             issuerWidth: issuerWidth,

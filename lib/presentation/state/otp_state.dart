@@ -8,6 +8,7 @@ import '../../domain/services/otp_service.dart';
 import '../../utils/clipboard_utils.dart';
 import '../../services/twofas_decryption_service.dart';
 import '../../services/secure_storage_service.dart';
+import '../../services/twofas_icon_service.dart';
 import 'otp_display_state.dart';
 
 class OtpState extends ChangeNotifier {
@@ -28,7 +29,7 @@ class OtpState extends ChangeNotifier {
   bool _disposed = false;
   bool _hasExistingData = false;
   String? _selectedFilePath;
-  
+
   // Helper method to yield control to allow UI updates
   Future<void> _yieldToUI([int milliseconds = 16]) async {
     // Give enough time for multiple UI frames - tests will pump through these quickly
@@ -83,7 +84,8 @@ class OtpState extends ChangeNotifier {
 
   void _cancelTimerForService(String serviceKey) {
     // Cancel any existing timers for this service (there might be multiple with different timestamps)
-    final keysToRemove = _timers.keys.where((key) => key.startsWith('$serviceKey-')).toList();
+    final keysToRemove =
+        _timers.keys.where((key) => key.startsWith('$serviceKey-')).toList();
     for (final key in keysToRemove) {
       _timers[key]?.cancel();
       _timers.remove(key);
@@ -93,7 +95,7 @@ class OtpState extends ChangeNotifier {
   // Methods - version for production with UI yields
   Future<void> _initializeDataWithYields() async {
     if (_disposed) return;
-    
+
     _isLoading = true;
     _requiresPassword = false;
     _encryptionError = null;
@@ -113,7 +115,7 @@ class OtpState extends ChangeNotifier {
   // Methods - version for tests without yields
   Future<void> initializeData() async {
     if (_disposed) return;
-    
+
     _isLoading = true;
     _requiresPassword = false;
     _encryptionError = null;
@@ -123,47 +125,51 @@ class OtpState extends ChangeNotifier {
 
     await _doInitialization(withUIYields: false);
   }
-  
+
   Future<void> _doInitialization({bool withUIYields = false}) async {
     try {
       // Check if file exists and if it's encrypted
       final file = await _storageRepository.getLocalFile();
       _dataDirectory = file.parent.path;
       _hasExistingData = await _storageRepository.hasExistingData();
-      
+
       // Yield after file system access to keep UI responsive
       if (withUIYields) await _yieldToUI(16);
 
       if (await file.exists()) {
         final contents = await file.readAsString();
-        
+
         // Yield after file read to keep UI responsive
         if (withUIYields) await _yieldToUI(24);
-        
+
         final jsonData = jsonDecode(contents) as Map<String, dynamic>;
-        
+
         // Yield after JSON parsing to keep UI responsive
         if (withUIYields) await _yieldToUI(16);
-        
+
         if (TwoFasDecryptionService.isEncrypted(jsonData)) {
           // Try to load with stored password first
           try {
             final data = await _storageRepository.loadData();
-            
+
             // Yield after secure storage access to keep UI responsive
             if (withUIYields) await _yieldToUI(32);
-            
+
             _services = data.services;
             _groups = data.groups;
-            
+
             // Yield before data processing to keep UI responsive
             if (withUIYields) await _yieldToUI(16);
-            
+
             _groupedServices = _groupServicesByGroup();
             _isLoading = false;
             if (!_disposed) {
               notifyListeners();
             }
+
+            // Preload icons for imported services asynchronously
+            _preloadIconsForServices();
+
             return;
           } catch (e) {
             // If stored password failed, require manual password entry
@@ -192,6 +198,9 @@ class OtpState extends ChangeNotifier {
       _services = data.services;
       _groups = data.groups;
       _groupedServices = _groupServicesByGroup();
+
+      // Preload icons for imported services asynchronously
+      _preloadIconsForServices();
     } catch (e) {
       _encryptionError = 'Error loading data: $e';
       debugPrint(_encryptionError);
@@ -214,6 +223,9 @@ class OtpState extends ChangeNotifier {
       _groups = data.groups;
       _groupedServices = _groupServicesByGroup();
       _requiresPassword = false;
+
+      // Preload icons for imported services asynchronously
+      _preloadIconsForServices();
     } catch (e) {
       _encryptionError = e.toString();
       debugPrint('Error loading encrypted data: $e');
@@ -310,7 +322,8 @@ class OtpState extends ChangeNotifier {
     final int timeRemaining = _otpGenerator.getRemainingSeconds(service);
 
     // Create unique timer key using timestamp to allow multiple generations
-    final String timerKey = '$serviceKey-${DateTime.now().millisecondsSinceEpoch}';
+    final String timerKey =
+        '$serviceKey-${DateTime.now().millisecondsSinceEpoch}';
 
     // Cancel any existing timer for this service
     _cancelTimerForService(serviceKey);
@@ -376,7 +389,8 @@ class OtpState extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final data = await _storageRepository.importBackupFile(filePath, password: password);
+      final data = await _storageRepository.importBackupFile(filePath,
+          password: password);
       _services = data.services;
       _groups = data.groups;
       _groupedServices = _groupServicesByGroup();
@@ -384,6 +398,10 @@ class OtpState extends ChangeNotifier {
       _requiresPassword = false;
       _isLoading = false;
       notifyListeners();
+
+      // Preload icons for imported services asynchronously
+      _preloadIconsForServices();
+
       return true;
     } catch (e) {
       if (e.toString().contains('Password required')) {
@@ -412,5 +430,16 @@ class OtpState extends ChangeNotifier {
   Future<bool> importSelectedFileWithPassword(String password) async {
     if (_selectedFilePath == null) return false;
     return await importBackupFile(_selectedFilePath!, password: password);
+  }
+
+  /// Preloads icons for the current services asynchronously
+  void _preloadIconsForServices() {
+    if (_services.isEmpty) return;
+
+    final serviceNames = _services.map((s) => s.name).toList();
+    final issuers = _services.map((s) => s.otp.issuer).toList();
+
+    // Preload icons in the background (non-blocking)
+    TwoFasIconService.preloadIconsForServices(serviceNames, issuers);
   }
 }
