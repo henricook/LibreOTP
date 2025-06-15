@@ -285,7 +285,7 @@ class TwoFasIconService {
       _cachedIcons = jsonList.map((json) => TwoFasIcon.fromJson(json)).toList();
       _lastCacheUpdate = DateTime.now();
 
-      debugPrint('Successfully fetched ${_cachedIcons.length} 2FAS icons');
+      debugPrint('Successfully fetched ${_cachedIcons.length} 2FAS icon metadata entries');
     } else {
       throw HttpException('Failed to fetch icons: ${response.statusCode}');
     }
@@ -305,7 +305,7 @@ class TwoFasIconService {
         _cachedIcons =
             iconsList.map((json) => TwoFasIcon.fromJson(json)).toList();
 
-        debugPrint('Loaded ${_cachedIcons.length} icons from local cache');
+        debugPrint('Loaded ${_cachedIcons.length} icon metadata entries from local cache');
       }
     } catch (e) {
       debugPrint('Error loading icons from local cache: $e');
@@ -325,7 +325,7 @@ class TwoFasIconService {
       };
 
       await file.writeAsString(jsonEncode(jsonData));
-      debugPrint('Saved ${_cachedIcons.length} icons to local cache');
+      debugPrint('Saved ${_cachedIcons.length} icon metadata entries to local cache');
     } catch (e) {
       debugPrint('Error saving icons to local cache: $e');
     }
