@@ -105,7 +105,7 @@ jobs:
             VERSION="0.0.0-snapshot.$(date +'%Y%m%d').${GITHUB_SHA::7}"
           fi
           APP_NAME="LibreOTP"
-          BUNDLE_PATH="build/macos/Build/Products/Release/${APP_NAME}.app"
+          BUNDLE_PATH="build/macos/Build/Products/Release/libreotp.app"
           DMG_NAME="${APP_NAME}-${VERSION}-macos.dmg"
           
           # Debug: Check if app bundle exists
@@ -141,6 +141,7 @@ jobs:
           path: |
             build/macos/Build/Products/Release/
             LibreOTP-*.dmg
+          if-no-files-found: warn
   build-windows:
     runs-on: windows-latest
     steps:
@@ -190,9 +191,11 @@ jobs:
           fi
           if [ -d "macos-release" ]; then
             tar -czf ../libreotp-macos.tar.gz -C macos-release .
-            if [ -f "macos-release/LibreOTP-*.dmg" ]; then
-              cp macos-release/LibreOTP-*.dmg ..
-            fi
+            # Copy any DMG files from the macos build to parent directory (where release files are)
+            echo "Looking for DMG files in macos-release..."
+            find macos-release -name "LibreOTP-*.dmg" -exec echo "Found DMG: {}" \; -exec cp {} .. \;
+            # Also check for any .dmg files
+            find macos-release -name "*.dmg" -exec echo "Found any DMG: {}" \; -exec cp {} .. \;
           fi
           if [ -d "windows-release" ]; then
             cd windows-release && zip -r ../../libreotp-windows.zip . && cd ..
