@@ -9,7 +9,7 @@ Flutter means this app works on Windows, Mac and Linux.
 Contributions and improvements are welcome, open an `RFC: ` issue if you'd like to discuss a plan before getting started.
 
 ## Preview
-[Demo Video](https://github.com/user-attachments/assets/c46a2089-874d-4836-91dd-ee2880159add)
+[Demo Video](https://github.com/user-attachments/assets/2e402b35-34ca-45a0-ab6f-e1dced7e2f6e)
 
 ## Getting Started
 
