@@ -9,7 +9,7 @@ Flutter means this app works on Windows, Mac and Linux.
 Contributions and improvements are welcome, open an `RFC: ` issue if you'd like to discuss a plan before getting started.
 
 ## Preview
-[Demo Video](https://github.com/user-attachments/assets/7fb41579-4e8b-41b5-8915-f7de742037fe)
+[Demo Video](https://github.com/user-attachments/assets/c46a2089-874d-4836-91dd-ee2880159add)
 
 ## Getting Started
 
@@ -105,8 +105,4 @@ The Flutter docs are great and along with IntelliJ's starter project meant I got
 
 ## Roadmap / ideas
 
-1. ✅ ~~Support encrypted dumps so that I don't need to leave my secrets unencrypted on disk~~
-2. (Big one) Sync with Google Drive
-3. Better installers (especially for macOS and Windows)
-4. Automated release pipeline with tagging and asset generation
-5. Support for HOTP (counter-based) codes
+1. Support for HOTP (counter-based) codes
