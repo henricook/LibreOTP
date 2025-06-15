@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+    tags:
+      - 'v*'
 
 jobs:
   build-linux:
@@ -29,11 +31,50 @@ jobs:
       - run: flutter pub get
       - run: flutter build linux
 
+      - name: Build .deb package (for version releases only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          mkdir -p build/deb/DEBIAN
+          mkdir -p build/deb/usr/bin
+          mkdir -p build/deb/usr/share/applications
+          mkdir -p build/deb/usr/share/pixmaps
+          
+          # Copy binary
+          cp -r build/linux/x64/release/bundle/* build/deb/usr/bin/
+          
+          # Create control file
+          cat > build/deb/DEBIAN/control << EOF
+          Package: libreotp
+          Version: $VERSION
+          Architecture: amd64
+          Maintainer: Henri Cook <henri@henricook.com>
+          Description: LibreOTP - Desktop OTP code generator
+           LibreOTP is a desktop OTP code generator that works with 2FAS exports.
+          Depends: libgtk-3-0, libsecret-1-0
+          EOF
+          
+          # Create .desktop file
+          cat > build/deb/usr/share/applications/libreotp.desktop << EOF
+          [Desktop Entry]
+          Name=LibreOTP
+          Comment=Desktop OTP code generator
+          Exec=/usr/bin/libreotp
+          Icon=libreotp
+          Type=Application
+          Categories=Utility;Security;
+          EOF
+          
+          # Build package
+          dpkg-deb --build build/deb libreotp.deb
+
       - name: Upload Linux build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: linux-release
-          path: build/linux/x64/release/
+          path: |
+            build/linux/x64/release/
+            libreotp.deb
 
   build-macos:
     runs-on: macos-latest
@@ -69,5 +110,72 @@ jobs:
         with:
           name: windows-release
           path: build/windows/x64/runner/Release/
+
+  create-release:
+    needs: [build-linux, build-macos, build-windows]
+    runs-on: ubuntu-latest
+    if: always() && (needs.build-linux.result == 'success' || needs.build-macos.result == 'success' || needs.build-windows.result == 'success')
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      
+      - name: Create archives
+        run: |
+          cd artifacts
+          if [ -d "linux-release" ]; then
+            tar -czf ../libreotp-linux.tar.gz -C linux-release .
+            if [ -f "linux-release/libreotp.deb" ]; then
+              cp linux-release/libreotp.deb ..
+            fi
+          fi
+          if [ -d "macos-release" ]; then
+            tar -czf ../libreotp-macos.tar.gz -C macos-release .
+          fi
+          if [ -d "windows-release" ]; then
+            cd windows-release && zip -r ../../libreotp-windows.zip . && cd ..
+          fi
+      
+      - name: Create SNAPSHOT Release
+        if: github.ref == 'refs/heads/main'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: snapshot-${{ github.sha }}
+          name: "SNAPSHOT Build - ${{ github.sha }}"
+          body: |
+            Automated snapshot build from main branch.
+            
+            Commit: ${{ github.sha }}
+            Date: ${{ github.event.head_commit.timestamp }}
+          prerelease: true
+          files: |
+            libreotp-*.tar.gz
+            libreotp-*.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Create Version Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: "LibreOTP ${{ github.ref_name }}"
+          body: |
+            Release ${{ github.ref_name }} of LibreOTP.
+            
+            See CHANGELOG.md for details.
+          draft: false
+          prerelease: false
+          files: |
+            libreotp-*.tar.gz
+            libreotp-*.zip
+            libreotp.deb
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
 
