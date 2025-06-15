@@ -211,7 +211,7 @@ jobs:
             Date: ${{ github.event.head_commit.timestamp }}
             
             **Note**: This is a development snapshot. For stable releases, use the latest version tag.
-          prerelease: false
+          prerelease: true
           files: |
             libreotp-*.tar.gz
             libreotp-*.zip
