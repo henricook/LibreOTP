@@ -102,11 +102,22 @@ jobs:
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             VERSION=${GITHUB_REF#refs/tags/v}
           else
-            VERSION=${GITHUB_REF#refs/tags/builddebug-}
+            VERSION="0.0.0-snapshot.$(date +'%Y%m%d').${GITHUB_SHA::7}"
           fi
           APP_NAME="LibreOTP"
           BUNDLE_PATH="build/macos/Build/Products/Release/${APP_NAME}.app"
           DMG_NAME="${APP_NAME}-${VERSION}-macos.dmg"
+          
+          # Debug: Check if app bundle exists
+          echo "Checking for app bundle at: $BUNDLE_PATH"
+          ls -la build/macos/Build/Products/Release/ || echo "Release directory doesn't exist"
+          
+          if [ ! -d "$BUNDLE_PATH" ]; then
+            echo "Error: App bundle not found at $BUNDLE_PATH"
+            echo "Available files in build/macos/Build/Products/:"
+            find build/macos/Build/Products/ -name "*.app" || echo "No .app bundles found"
+            exit 1
+          fi
           
           # Create temporary directory
           TEMP_DIR=$(mktemp -d)
@@ -120,6 +131,8 @@ jobs:
           
           # Clean up
           rm -rf "$TEMP_DIR"
+          
+          echo "DMG created: $DMG_NAME"
           
       - name: Upload macOS build artifacts
         uses: actions/upload-artifact@v4
