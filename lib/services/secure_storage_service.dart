@@ -22,6 +22,10 @@ class SecureStorageService {
   static const String _passwordKey = 'twofas_backup_password';
   static const String _saltKey = 'twofas_backup_salt';
   static const String _fileHashKey = 'twofas_backup_file_hash';
+  
+  // Simple in-memory cache to avoid repeated secure storage access during app session
+  static String? _cachedPassword;
+  static String? _cachedFileHash;
 
   /// Securely stores the password for the current backup file
   /// The password is encrypted with a device-specific key and tied to the file hash
@@ -44,6 +48,10 @@ class SecureStorageService {
       await _storage.write(key: _passwordKey, value: base64.encode(encryptedPassword));
       await _storage.write(key: _saltKey, value: base64.encode(salt));
       await _storage.write(key: _fileHashKey, value: fileHash);
+      
+      // Update cache
+      _cachedPassword = password;
+      _cachedFileHash = fileHash;
     } catch (e) {
       throw Exception('Failed to store password securely: $e');
     }
@@ -53,6 +61,13 @@ class SecureStorageService {
   /// Returns null if no password is stored or if the file has changed
   static Future<String?> getStoredPassword(String fileContent) async {
     try {
+      final currentFileHash = sha256.convert(utf8.encode(fileContent)).toString();
+      
+      // Check cache first
+      if (_cachedPassword != null && _cachedFileHash == currentFileHash) {
+        return _cachedPassword;
+      }
+      
       // Check if we have stored credentials
       final encryptedPasswordB64 = await _storage.read(key: _passwordKey);
       final saltB64 = await _storage.read(key: _saltKey);
@@ -63,9 +78,8 @@ class SecureStorageService {
       }
       
       // Verify the file hasn't changed
-      final currentFileHash = sha256.convert(utf8.encode(fileContent)).toString();
       if (currentFileHash != storedFileHash) {
-        // File has changed, clear stored password
+        // File has changed, clear stored password and cache
         await clearStoredPassword();
         return null;
       }
@@ -75,9 +89,15 @@ class SecureStorageService {
       final salt = base64.decode(saltB64);
       final deviceKey = await _deriveDeviceKey(salt);
       
-      return _decryptPassword(encryptedPassword, deviceKey);
+      final password = _decryptPassword(encryptedPassword, deviceKey);
+      
+      // Cache the result for future calls
+      _cachedPassword = password;
+      _cachedFileHash = currentFileHash;
+      
+      return password;
     } catch (e) {
-      // If decryption fails, clear stored data and return null
+      // If decryption fails, clear stored data and cache
       await clearStoredPassword();
       return null;
     }
@@ -85,6 +105,11 @@ class SecureStorageService {
 
   /// Clears all stored password data
   static Future<void> clearStoredPassword() async {
+    // Clear cache
+    _cachedPassword = null;
+    _cachedFileHash = null;
+    
+    // Clear secure storage
     await Future.wait([
       _storage.delete(key: _passwordKey),
       _storage.delete(key: _saltKey),

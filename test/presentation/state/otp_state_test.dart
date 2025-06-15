@@ -81,8 +81,8 @@ void main() {
       mockRepository = MockStorageRepository();
       mockGenerator = MockOtpGenerator();
       otpState = OtpState(mockRepository, mockGenerator);
-      // Wait for async initialization to complete before running tests
-      await Future.delayed(const Duration(milliseconds: 50));
+      // Call initialization directly for tests since addPostFrameCallback doesn't work in test environment
+      await otpState.initializeData();
     });
 
     tearDown(() async {
@@ -95,7 +95,7 @@ void main() {
 
     group('Initialization', () {
       test('should eventually finish loading', () {
-        // Initialization already completed in setUp
+        // Initialization should already be completed in setUp
         expect(otpState.isLoading, isFalse);
       });
 
@@ -128,6 +128,9 @@ void main() {
         final context = tester.element(find.byType(Container));
 
         expect(() => otpState.generateOtp('invalid-group', 0, context), returnsNormally);
+        
+        // Pump the timer to completion to avoid test failures
+        await tester.pumpAndSettle();
       });
     });
 

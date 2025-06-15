@@ -128,7 +128,22 @@ class _DashboardPageState extends State<DashboardPage> {
       body: Consumer<OtpState>(
         builder: (context, otpState, child) {
           if (otpState.isLoading) {
-            return const Center(child: CircularProgressIndicator());
+            return const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(),
+                  SizedBox(height: 16),
+                  Text(
+                    'Accessing secure storage...',
+                    style: TextStyle(
+                      fontSize: 16,
+                      color: Colors.grey,
+                    ),
+                  ),
+                ],
+              ),
+            );
           }
 
           if (otpState.requiresPassword) {

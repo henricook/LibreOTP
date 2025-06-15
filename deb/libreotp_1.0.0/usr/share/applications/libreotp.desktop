@@ -1,7 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=LibreOTP
-Exec=/opt/libreotp/LibreOTP
-Icon=libreotp
-Categories=Utility;
-Terminal=false

@@ -25,9 +25,28 @@ class OtpState extends ChangeNotifier {
   bool _isLoading = true;
   bool _requiresPassword = false;
   String? _encryptionError;
+  bool _disposed = false;
+  
+  // Helper method to yield control to allow UI updates
+  Future<void> _yieldToUI([int milliseconds = 16]) async {
+    // Give enough time for multiple UI frames - tests will pump through these quickly
+    await Future.delayed(Duration(milliseconds: milliseconds));
+  }
 
   OtpState(this._storageRepository, this._otpGenerator) {
-    _initializeData();
+    // Schedule initialization after the current frame to prevent blocking the UI
+    // Only if WidgetsBinding is initialized (not in tests)
+    try {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!_disposed) {
+          await _initializeDataWithYields();
+        }
+      });
+    } catch (e) {
+      // In test environment, WidgetsBinding might not be available
+      // Tests should call initializeData() manually
+      debugPrint('WidgetsBinding not available, skipping auto-initialization');
+    }
   }
 
   // Getters
@@ -46,6 +65,7 @@ class OtpState extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     _cancelAllTimers();
     super.dispose();
   }
@@ -66,45 +86,97 @@ class OtpState extends ChangeNotifier {
     }
   }
 
-  // Methods
-  Future<void> _initializeData() async {
+  // Methods - version for production with UI yields
+  Future<void> _initializeDataWithYields() async {
+    if (_disposed) return;
+    
     _isLoading = true;
     _requiresPassword = false;
     _encryptionError = null;
-    notifyListeners();
+    if (!_disposed) {
+      notifyListeners();
+    }
 
+    // Use multiple shorter yields to ensure smooth animation
+    for (int i = 0; i < 3; i++) {
+      await _yieldToUI(16); // Multiple 16ms yields for smooth startup
+      if (_disposed) return;
+    }
+
+    await _doInitialization(withUIYields: true);
+  }
+
+  // Methods - version for tests without yields
+  Future<void> initializeData() async {
+    if (_disposed) return;
+    
+    _isLoading = true;
+    _requiresPassword = false;
+    _encryptionError = null;
+    if (!_disposed) {
+      notifyListeners();
+    }
+
+    await _doInitialization(withUIYields: false);
+  }
+  
+  Future<void> _doInitialization({bool withUIYields = false}) async {
     try {
       // Check if file exists and if it's encrypted
       final file = await _storageRepository.getLocalFile();
       _dataDirectory = file.parent.path;
+      
+      // Yield after file system access to keep UI responsive
+      if (withUIYields) await _yieldToUI(16);
 
       if (await file.exists()) {
         final contents = await file.readAsString();
+        
+        // Yield after file read to keep UI responsive
+        if (withUIYields) await _yieldToUI(24);
+        
         final jsonData = jsonDecode(contents) as Map<String, dynamic>;
+        
+        // Yield after JSON parsing to keep UI responsive
+        if (withUIYields) await _yieldToUI(16);
         
         if (TwoFasDecryptionService.isEncrypted(jsonData)) {
           // Try to load with stored password first
           try {
             final data = await _storageRepository.loadData();
+            
+            // Yield after secure storage access to keep UI responsive
+            if (withUIYields) await _yieldToUI(32);
+            
             _services = data.services;
             _groups = data.groups;
+            
+            // Yield before data processing to keep UI responsive
+            if (withUIYields) await _yieldToUI(16);
+            
             _groupedServices = _groupServicesByGroup();
             _isLoading = false;
-            notifyListeners();
+            if (!_disposed) {
+              notifyListeners();
+            }
             return;
           } catch (e) {
             // If stored password failed, require manual password entry
             if (e.toString().contains('Password required')) {
               _requiresPassword = true;
               _isLoading = false;
-              notifyListeners();
+              if (!_disposed) {
+                notifyListeners();
+              }
               return;
             } else {
               // Other errors (like wrong stored password) should be handled
               _encryptionError = 'Failed to decrypt backup: ${e.toString()}';
               _requiresPassword = true;
               _isLoading = false;
-              notifyListeners();
+              if (!_disposed) {
+                notifyListeners();
+              }
               return;
             }
           }
@@ -121,7 +193,9 @@ class OtpState extends ChangeNotifier {
     }
 
     _isLoading = false;
-    notifyListeners();
+    if (!_disposed) {
+      notifyListeners();
+    }
   }
 
   Future<void> loadDataWithPassword(String password) async {
@@ -145,7 +219,7 @@ class OtpState extends ChangeNotifier {
   }
 
   void retryDataLoad() {
-    _initializeData();
+    initializeData();
   }
 
   Future<void> clearStoredPassword() async {

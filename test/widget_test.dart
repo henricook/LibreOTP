@@ -23,6 +23,9 @@ void main() {
       ),
     );
 
+    // Pump with duration to handle async operations and timers
+    await tester.pump(const Duration(milliseconds: 100));
+
     // Verify that the app title is shown.
     expect(find.text(AppConfig.appTitle), findsOneWidget);
   });

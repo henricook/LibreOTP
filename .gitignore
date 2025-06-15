@@ -55,3 +55,6 @@ app.*.map.json
 
 /deb/*.deb
 /deb/libreotp_*/opt/libreotp/*
+
+# Allow Claude.md
+!!CLAUDE.md
