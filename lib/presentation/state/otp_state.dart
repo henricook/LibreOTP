@@ -8,6 +8,7 @@ import '../../domain/services/otp_service.dart';
 import '../../utils/clipboard_utils.dart';
 import '../../services/twofas_decryption_service.dart';
 import '../../services/secure_storage_service.dart';
+import '../../services/twofas_icon_service.dart';
 import 'otp_display_state.dart';
 
 class OtpState extends ChangeNotifier {
@@ -164,6 +165,10 @@ class OtpState extends ChangeNotifier {
             if (!_disposed) {
               notifyListeners();
             }
+            
+            // Preload icons for imported services asynchronously
+            _preloadIconsForServices();
+            
             return;
           } catch (e) {
             // If stored password failed, require manual password entry
@@ -192,6 +197,9 @@ class OtpState extends ChangeNotifier {
       _services = data.services;
       _groups = data.groups;
       _groupedServices = _groupServicesByGroup();
+      
+      // Preload icons for imported services asynchronously
+      _preloadIconsForServices();
     } catch (e) {
       _encryptionError = 'Error loading data: $e';
       debugPrint(_encryptionError);
@@ -214,6 +222,9 @@ class OtpState extends ChangeNotifier {
       _groups = data.groups;
       _groupedServices = _groupServicesByGroup();
       _requiresPassword = false;
+      
+      // Preload icons for imported services asynchronously
+      _preloadIconsForServices();
     } catch (e) {
       _encryptionError = e.toString();
       debugPrint('Error loading encrypted data: $e');
@@ -384,6 +395,10 @@ class OtpState extends ChangeNotifier {
       _requiresPassword = false;
       _isLoading = false;
       notifyListeners();
+      
+      // Preload icons for imported services asynchronously
+      _preloadIconsForServices();
+      
       return true;
     } catch (e) {
       if (e.toString().contains('Password required')) {
@@ -412,5 +427,16 @@ class OtpState extends ChangeNotifier {
   Future<bool> importSelectedFileWithPassword(String password) async {
     if (_selectedFilePath == null) return false;
     return await importBackupFile(_selectedFilePath!, password: password);
+  }
+
+  /// Preloads icons for the current services asynchronously
+  void _preloadIconsForServices() {
+    if (_services.isEmpty) return;
+    
+    final serviceNames = _services.map((s) => s.name).toList();
+    final issuers = _services.map((s) => s.otp.issuer).toList();
+    
+    // Preload icons in the background (non-blocking)
+    TwoFasIconService.preloadIconsForServices(serviceNames, issuers);
   }
 }

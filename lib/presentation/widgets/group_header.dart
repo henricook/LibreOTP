@@ -7,6 +7,7 @@ class GroupHeader extends DataRow {
   }) : super(
           color: WidgetStateProperty.all(Colors.grey.shade200),
           cells: [
+            const DataCell(Text('')), // Icon column
             DataCell(
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 4.0),
