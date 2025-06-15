@@ -11,16 +11,29 @@ Contributions and improvements are welcome, open an `RFC: ` issue if you'd like 
 ## Preview
 [Demo Video](https://github.com/user-attachments/assets/2e402b35-34ca-45a0-ab6f-e1dced7e2f6e)
 
-## Getting Started
+## Installation
 
-1. Generate an export from your 2FAS app and download it to your desktop machine, call it `data.json`. 
-   - Both encrypted and unencrypted exports are supported
-   - For encrypted exports, you'll be prompted to enter your password when the app starts
-2. Put this file in a folder called 'LibreOTP' in your system documents directory. This is the hard coded location where the app will search for it e.g. on my linux system that's `/home/henri/Documents/LibreOTP/data.json`. On other platforms the document directory is:
-   - Windows: `C:\Users\<Username>\Documents\LibreOTP\data.json`
-   - MacOS: `/Users/<Username>/Library/Containers/com.henricook.libreotp/Data/Documents/LibreOTP/data.json` (sorry, MacOS Sandboxing requirements make this ugly. You'll need to create this path.)
-   - Linux: `/home/<Username>/Documents`
-3. **Linux users only**: Install system dependencies for secure password storage:
+### Easy Installation (Recommended)
+
+**📦 Debian/Ubuntu Linux**
+```bash
+# Download the .deb package from the latest release
+wget https://github.com/henricook/LibreOTP/releases/latest/download/libreotp.deb
+sudo dpkg -i libreotp.deb
+```
+The app will appear in your applications menu. Dependencies are automatically installed.
+
+**🍎 macOS**
+1. Download the `.dmg` file from the [latest release](https://github.com/henricook/LibreOTP/releases/latest)
+2. Open the `.dmg` file and drag LibreOTP to your Applications folder
+3. Launch from Applications or Spotlight
+
+### Advanced Installation (Other Operating Systems)
+
+**🐧 Other Linux Distributions**
+1. Download `libreotp-linux.tar.gz` from the [releases page](https://github.com/henricook/LibreOTP/releases)
+2. Extract: `tar -xzf libreotp-linux.tar.gz`
+3. Install dependencies:
    ```bash
    # Ubuntu/Debian - try one of these libjsoncpp versions (varies by Ubuntu version):
    sudo apt install libsecret-1-0 libjsoncpp26  # Ubuntu 24.04+
@@ -28,21 +41,27 @@ Contributions and improvements are welcome, open an `RFC: ` issue if you'd like 
    sudo apt install libsecret-1-0 libjsoncpp25  # Ubuntu 22.04, 23.04
    # OR  
    sudo apt install libsecret-1-0 libjsoncpp1   # Older Ubuntu versions
-   
-   # For building from source, also install development packages:
-   sudo apt install libsecret-1-dev libjsoncpp-dev
    ```
-   - These packages enable secure keyring storage of encryption passwords
-   - **Note**: The deb package automatically handles version differences
-   - **Note**: The app currently uses a patched version of flutter_secure_storage_linux to fix compilation issues on newer Linux distributions
+4. Run: `chmod +x LibreOTP && ./LibreOTP`
 
-4. Download the appropriate binary/package for your OS from the [Releases page](https://github.com/henricook/libreotp/releases)
-   - For source releases: If needed, unpack the zip, it's rough and ready right now but there'll be a folder called 'bundle' in there that you can switch to. On Linux to run the app you'd now do:
-      - `chmod +x ./LibreOTP`
-      - `./LibreOTP`
-   - For the deb: `dpkg -i libreotp_VERSION.deb`, a desktop entry should appear in your launcher
+**🪟 Windows**
+1. Download `libreotp-windows.zip` from the [releases page](https://github.com/henricook/LibreOTP/releases)
+2. Extract the zip file to a folder
+3. Run `LibreOTP.exe`
 
-5. Enjoy! And don't forget to :star: Star the repository to encourage further updates. 
+## Getting Started
+
+1. **Export your 2FAS data**: Generate an export from your 2FAS app and save it as `data.json`
+   - Both encrypted and unencrypted exports are supported
+   - For encrypted exports, you'll be prompted to enter your password when the app starts
+
+2. **Import into LibreOTP**: Launch the app and use the import button to select your `data.json` file
+   - The app will automatically detect if your export is encrypted
+   - Your data is stored securely on your device
+
+3. **Start generating codes**: Click any service to copy its OTP code to your clipboard
+
+4. **Enjoy!** And don't forget to :star: Star the repository to encourage further updates. 
 
 ## Troubleshooting
 
@@ -91,9 +110,9 @@ Contributions and improvements are welcome, open an `RFC: ` issue if you'd like 
 
 Core layout of the app is heavily inspired by `otpclient` which I liked but I found lacked grouping. Being written in C, I didn't find it particularly easy to contribute to either. 
 
-### [Flutter](https://github.com/flutter/flutter) + [GPT4o](https://chat.openai.com)
+### [Flutter](https://github.com/flutter/flutter) 
 
-The Flutter docs are great and along with IntelliJ's starter project meant I got up and running really fast. Coupled with copious amounts of GPTing I went from concept to version 0.1 in just 3 hours with no prior knowledge of Flutter or Dart.
+The Flutter docs are great and along with IntelliJ's starter project meant I got up and running really fast.
 
 ## Features
 
