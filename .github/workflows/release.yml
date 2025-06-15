@@ -123,8 +123,11 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
       
-      - name: Set short SHA
-        run: echo "GITHUB_SHA_SHORT=${GITHUB_SHA::7}" >> $GITHUB_ENV
+      - name: Set environment variables
+        run: |
+          echo "GITHUB_SHA_SHORT=${GITHUB_SHA::7}" >> $GITHUB_ENV
+          echo "BUILD_DATE=$(date +'%Y-%m-%d')" >> $GITHUB_ENV
+          echo "SNAPSHOT_TAG=snapshot-$(date +'%Y-%m-%d')-${GITHUB_SHA::7}" >> $GITHUB_ENV
       
       - name: Download all artifacts
         uses: actions/download-artifact@v4
@@ -147,23 +150,13 @@ jobs:
             cd windows-release && zip -r ../../libreotp-windows.zip . && cd ..
           fi
       
-      - name: Create SNAPSHOT Release
+      - name: Create SNAPSHOT Tag
         if: github.ref == 'refs/heads/main'
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: snapshot-${{ github.sha }}
-          name: "SNAPSHOT-${{ env.GITHUB_SHA_SHORT }}"
-          body: |
-            Automated snapshot build from main branch.
-            
-            Commit: ${{ github.sha }}
-            Date: ${{ github.event.head_commit.timestamp }}
-          prerelease: true
-          files: |
-            libreotp-*.tar.gz
-            libreotp-*.zip
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a ${{ env.SNAPSHOT_TAG }} -m "Snapshot build from commit ${{ github.sha }}"
+          git push origin ${{ env.SNAPSHOT_TAG }}
       
       - name: Create Version Release
         if: startsWith(github.ref, 'refs/tags/v')
