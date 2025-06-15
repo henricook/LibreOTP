@@ -170,11 +170,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: "LibreOTP ${{ github.ref_name }}"
-          body: |
-            Release ${{ github.ref_name }} of LibreOTP.
-            
-            See CHANGELOG.md for details.
           draft: false
           prerelease: false
           files: |
