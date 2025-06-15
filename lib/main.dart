@@ -26,7 +26,7 @@ class LibreOTPApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: AppConfig.appTitle,
+      title: AppConfig.appName,
       theme: ThemeData(
         primarySwatch: Colors.blue,
         useMaterial3: true,

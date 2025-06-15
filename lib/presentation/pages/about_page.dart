@@ -13,7 +13,12 @@ class AboutPage extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(AppConfig.appTitle),
+          FutureBuilder<String>(
+            future: AppConfig.getAppTitle(),
+            builder: (context, snapshot) {
+              return Text(snapshot.data ?? 'LibreOTP');
+            },
+          ),
           const SizedBox(height: 8),
           GestureDetector(
             onTap: () =>

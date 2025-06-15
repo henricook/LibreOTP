@@ -40,7 +40,7 @@ jobs:
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             VERSION=${GITHUB_REF#refs/tags/v}
           else
-            VERSION="snapshot-$(date +'%Y-%m-%d')-${GITHUB_SHA::7}"
+            VERSION="0.0.0-snapshot.$(date +'%Y%m%d').${GITHUB_SHA::7}"
           fi
           mkdir -p build/deb/DEBIAN
           mkdir -p build/deb/usr/bin

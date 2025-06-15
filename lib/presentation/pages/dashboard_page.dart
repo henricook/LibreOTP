@@ -189,13 +189,18 @@ class _DashboardPageState extends State<DashboardPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Text(
-                  AppConfig.appTitle,
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
+                FutureBuilder<String>(
+                  future: AppConfig.getAppTitle(),
+                  builder: (context, snapshot) {
+                    return Text(
+                      snapshot.data ?? 'LibreOTP',
+                      style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    );
+                  },
                 ),
                 Consumer<OtpState>(
                   builder: (context, otpState, child) {
