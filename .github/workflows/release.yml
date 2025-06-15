@@ -34,13 +34,13 @@ jobs:
       - run: flutter pub get
       - run: flutter build linux
 
-      - name: Build .deb package (for version releases only)
-        if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/builddebug-')
+      - name: Build .deb package
+        if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
         run: |
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             VERSION=${GITHUB_REF#refs/tags/v}
           else
-            VERSION=${GITHUB_REF#refs/tags/builddebug-}
+            VERSION="snapshot-$(date +'%Y-%m-%d')-${GITHUB_SHA::7}"
           fi
           mkdir -p build/deb/DEBIAN
           mkdir -p build/deb/usr/bin
@@ -96,8 +96,8 @@ jobs:
       - run: flutter pub get
       - run: flutter build macos
       
-      - name: Create DMG (for version releases only)
-        if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/builddebug-')
+      - name: Create DMG
+        if: startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main'
         run: |
           if [[ "$GITHUB_REF" == refs/tags/v* ]]; then
             VERSION=${GITHUB_REF#refs/tags/v}
@@ -185,16 +185,30 @@ jobs:
             cd windows-release && zip -r ../../libreotp-windows.zip . && cd ..
           fi
       
-      - name: Create SNAPSHOT Tag
+      - name: Create SNAPSHOT Release with Assets
         if: github.ref == 'refs/heads/main'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -a ${{ env.SNAPSHOT_TAG }} -m "Snapshot build from commit ${{ github.sha }}"
-          git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git ${{ env.SNAPSHOT_TAG }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.SNAPSHOT_TAG }}
+          name: "SNAPSHOT-${{ env.BUILD_DATE }}-${{ env.GITHUB_SHA_SHORT }}"
+          body: |
+            Automated snapshot build from main branch.
+            
+            Commit: ${{ github.sha }}
+            Date: ${{ github.event.head_commit.timestamp }}
+            
+            **Note**: This is a development snapshot. For stable releases, use the latest version tag.
+          prerelease: false
+          files: |
+            libreotp-*.tar.gz
+            libreotp-*.zip
+            libreotp.deb
+            LibreOTP-*.dmg
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       
       - name: Create Version Release
-        if: startsWith(github.ref, 'refs/tags/v') || startsWith(github.ref, 'refs/tags/builddebug-')
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
