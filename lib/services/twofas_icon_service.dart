@@ -55,6 +55,7 @@ class TwoFasIconService {
   static const String _baseUrl = 'https://api2.2fas.com/mobile/icons';
   static const String _cacheFileName = 'twofas_icons_cache.json';
   static const Duration _cacheValidDuration = Duration(days: 30);
+  static const double _iconCoverageThreshold = 0.3;
 
   static List<TwoFasIcon> _cachedIcons = [];
   static DateTime? _lastCacheUpdate;
@@ -112,7 +113,7 @@ class TwoFasIconService {
     }
 
     // If we found icons for at least 30% of services, consider it good enough
-    return foundCount >= (searchTerms.length * 0.3);
+    return foundCount >= (searchTerms.length * _iconCoverageThreshold);
   }
 
   /// Gets available icons (loads from cache only, doesn't fetch from API)

@@ -19,7 +19,6 @@ class OtpState extends ChangeNotifier {
   List<Group> _groups = [];
   String _searchQuery = '';
   Map<String, List<OtpService>> _groupedServices = {};
-  final bool _showNotification = false;
   final Map<String, Timer?> _timers = {};
   final Map<String, OtpDisplayState> _otpDisplayStates = {};
   String _dataDirectory = '';
@@ -36,9 +35,16 @@ class OtpState extends ChangeNotifier {
     await Future.delayed(Duration(milliseconds: milliseconds));
   }
 
+  /// Creates a new OtpState instance.
+  ///
+  /// In production (when WidgetsBinding is available), initialization is automatically
+  /// scheduled after the first frame using [_initializeDataWithYields], which includes
+  /// UI yields to prevent blocking the initial render and ensure smooth animations.
+  ///
+  /// In test environments where WidgetsBinding is not available, initialization is
+  /// skipped and tests must manually call [initializeData] to trigger initialization
+  /// without UI yields (for faster test execution).
   OtpState(this._storageRepository, this._otpGenerator) {
-    // Schedule initialization after the current frame to prevent blocking the UI
-    // Only if WidgetsBinding is initialized (not in tests)
     try {
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         if (!_disposed) {
@@ -46,8 +52,6 @@ class OtpState extends ChangeNotifier {
         }
       });
     } catch (e) {
-      // In test environment, WidgetsBinding might not be available
-      // Tests should call initializeData() manually
       debugPrint('WidgetsBinding not available, skipping auto-initialization');
     }
   }
@@ -56,7 +60,6 @@ class OtpState extends ChangeNotifier {
   List<OtpService> get services => _services;
   List<Group> get groups => _groups;
   Map<String, List<OtpService>> get groupedServices => _filterAndGroupData();
-  bool get showNotification => _showNotification;
   String get dataDirectory => _dataDirectory;
   bool get isLoading => _isLoading;
   bool get requiresPassword => _requiresPassword;
@@ -92,7 +95,16 @@ class OtpState extends ChangeNotifier {
     }
   }
 
-  // Methods - version for production with UI yields
+  /// Production initialization with UI yields for smooth animations.
+  ///
+  /// This method is called automatically in production after the first frame.
+  /// It includes strategic delays (UI yields) to:
+  /// - Prevent blocking the initial UI render
+  /// - Allow smooth fade-in animations to complete
+  /// - Ensure the app feels responsive even during data loading
+  ///
+  /// The multiple 16ms yields (approximately one frame at 60fps) give the UI
+  /// thread time to render frames smoothly during startup.
   Future<void> _initializeDataWithYields() async {
     if (_disposed) return;
 
@@ -112,7 +124,17 @@ class OtpState extends ChangeNotifier {
     await _doInitialization(withUIYields: true);
   }
 
-  // Methods - version for tests without yields
+  /// Test-friendly initialization without UI yields.
+  ///
+  /// This method should be called manually in tests to trigger initialization.
+  /// It skips UI yields for faster test execution since tests use [WidgetTester.pump]
+  /// to manually control frame timing and don't need real-time delays.
+  ///
+  /// Call this in your tests after creating an OtpState instance:
+  /// ```dart
+  /// final state = OtpState(repository, generator);
+  /// await state.initializeData();
+  /// ```
   Future<void> initializeData() async {
     if (_disposed) return;
 

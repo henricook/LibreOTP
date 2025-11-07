@@ -4,13 +4,14 @@ import '../../config/app_config.dart';
 import '../state/otp_state.dart';
 import '../widgets/search_bar.dart';
 import '../widgets/otp_table.dart';
-import '../widgets/notification_toast.dart';
 import '../widgets/password_dialog.dart';
 import 'about_page.dart';
 import 'data_directory_page.dart';
 
 class DashboardPage extends StatefulWidget {
-  const DashboardPage({super.key});
+  final Function(ThemeMode) onThemeChanged;
+
+  const DashboardPage({super.key, required this.onThemeChanged});
 
   @override
   State<DashboardPage> createState() => _DashboardPageState();
@@ -175,7 +176,7 @@ class _DashboardPageState extends State<DashboardPage> {
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.1),
+                color: Theme.of(context).shadowColor.withValues(alpha: 0.1),
                 offset: const Offset(0, 2),
                 blurRadius: 4,
               ),
@@ -189,18 +190,13 @@ class _DashboardPageState extends State<DashboardPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                FutureBuilder<String>(
-                  future: AppConfig.getAppTitle(),
-                  builder: (context, snapshot) {
-                    return Text(
-                      snapshot.data ?? 'LibreOTP',
-                      style: const TextStyle(
-                        fontSize: 22,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
-                    );
-                  },
+                Text(
+                  AppConfig.getAppTitleSync(),
+                  style: TextStyle(
+                    fontSize: 22,
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(context).colorScheme.onPrimary,
+                  ),
                 ),
                 Consumer<OtpState>(
                   builder: (context, otpState, child) {
@@ -208,7 +204,7 @@ class _DashboardPageState extends State<DashboardPage> {
                       '${otpState.services.length} services',
                       style: TextStyle(
                         fontSize: 14,
-                        color: Colors.white.withValues(alpha: 0.8),
+                        color: Theme.of(context).colorScheme.onPrimary.withValues(alpha: 0.8),
                         fontWeight: FontWeight.normal,
                       ),
                     );
@@ -218,17 +214,54 @@ class _DashboardPageState extends State<DashboardPage> {
             ),
             actions: [
               IconButton(
-                icon: const Icon(Icons.upload_file, color: Colors.white),
+                icon: Icon(Icons.upload_file, color: Theme.of(context).colorScheme.onPrimary),
                 tooltip: 'Import 2FAS Backup',
                 onPressed: () => _showImportDialog(context),
               ),
               IconButton(
-                icon: const Icon(Icons.folder_open, color: Colors.white),
+                icon: Icon(Icons.folder_open, color: Theme.of(context).colorScheme.onPrimary),
                 tooltip: 'Show Data Directory',
                 onPressed: () => _showDataDirectory(context),
               ),
+              PopupMenuButton<ThemeMode>(
+                icon: Icon(Icons.brightness_medium, color: Theme.of(context).colorScheme.onPrimary),
+                tooltip: 'Theme',
+                onSelected: widget.onThemeChanged,
+                itemBuilder: (context) => [
+                  const PopupMenuItem(
+                    value: ThemeMode.system,
+                    child: Row(
+                      children: [
+                        Icon(Icons.brightness_auto),
+                        SizedBox(width: 8),
+                        Text('System'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: ThemeMode.light,
+                    child: Row(
+                      children: [
+                        Icon(Icons.light_mode),
+                        SizedBox(width: 8),
+                        Text('Light'),
+                      ],
+                    ),
+                  ),
+                  const PopupMenuItem(
+                    value: ThemeMode.dark,
+                    child: Row(
+                      children: [
+                        Icon(Icons.dark_mode),
+                        SizedBox(width: 8),
+                        Text('Dark'),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
               IconButton(
-                icon: const Icon(Icons.info_outline, color: Colors.white),
+                icon: Icon(Icons.info_outline, color: Theme.of(context).colorScheme.onPrimary),
                 tooltip: 'About',
                 onPressed: () => _showAboutDialog(context),
               ),
@@ -240,17 +273,17 @@ class _DashboardPageState extends State<DashboardPage> {
       body: Consumer<OtpState>(
         builder: (context, otpState, child) {
           if (otpState.isLoading) {
-            return const Center(
+            return Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  CircularProgressIndicator(),
-                  SizedBox(height: 16),
+                  const CircularProgressIndicator(),
+                  const SizedBox(height: 16),
                   Text(
                     'Accessing secure storage...',
                     style: TextStyle(
                       fontSize: 16,
-                      color: Colors.grey,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                   ),
                 ],
@@ -263,16 +296,16 @@ class _DashboardPageState extends State<DashboardPage> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.lock, size: 64, color: Colors.grey),
+                  Icon(Icons.lock, size: 64, color: Theme.of(context).colorScheme.onSurfaceVariant),
                   const SizedBox(height: 16),
                   const Text(
                     'Encrypted Backup Detected',
                     style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 8),
-                  const Text(
+                  Text(
                     'Please provide the password to decrypt your backup.',
-                    style: TextStyle(color: Colors.grey),
+                    style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
                   ),
                   const SizedBox(height: 24),
                   ElevatedButton.icon(
@@ -290,7 +323,7 @@ class _DashboardPageState extends State<DashboardPage> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.error, size: 64, color: Colors.red),
+                  Icon(Icons.error, size: 64, color: Theme.of(context).colorScheme.error),
                   const SizedBox(height: 16),
                   const Text(
                     'Failed to Load Backup',
@@ -299,7 +332,7 @@ class _DashboardPageState extends State<DashboardPage> {
                   const SizedBox(height: 8),
                   Text(
                     otpState.encryptionError!,
-                    style: const TextStyle(color: Colors.grey),
+                    style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 16),
@@ -334,16 +367,16 @@ class _DashboardPageState extends State<DashboardPage> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Icon(Icons.security, size: 64, color: Colors.blue),
+                  Icon(Icons.security, size: 64, color: Theme.of(context).colorScheme.primary),
                   const SizedBox(height: 16),
                   const Text(
                     'Welcome to LibreOTP',
                     style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 8),
-                  const Text(
+                  Text(
                     'Import your 2FAS backup to get started',
-                    style: TextStyle(fontSize: 16, color: Colors.grey),
+                    style: TextStyle(fontSize: 16, color: Theme.of(context).colorScheme.onSurfaceVariant),
                   ),
                   const SizedBox(height: 24),
                   ElevatedButton.icon(
@@ -356,9 +389,9 @@ class _DashboardPageState extends State<DashboardPage> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  const Text(
+                  Text(
                     'Export your data from the 2FAS app and select the JSON file',
-                    style: TextStyle(fontSize: 12, color: Colors.grey),
+                    style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
                     textAlign: TextAlign.center,
                   ),
                 ],
@@ -399,9 +432,6 @@ class _DashboardPageState extends State<DashboardPage> {
                   ),
                 ],
               ),
-              if (otpState.showNotification)
-                const NotificationToast(
-                    message: 'OTP Code Copied to Clipboard!'),
             ],
           );
         },

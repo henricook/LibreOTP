@@ -9,6 +9,9 @@ import 'presentation/pages/dashboard_page.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Preload app title to avoid repeated async calls in UI
+  await AppConfig.getAppTitle();
+
   final storageRepository = StorageRepository();
   final otpGenerator = OtpGenerator();
 
@@ -20,18 +23,56 @@ void main() async {
   );
 }
 
-class LibreOTPApp extends StatelessWidget {
+class LibreOTPApp extends StatefulWidget {
   const LibreOTPApp({super.key});
+
+  @override
+  State<LibreOTPApp> createState() => _LibreOTPAppState();
+}
+
+class _LibreOTPAppState extends State<LibreOTPApp> {
+  ThemeMode _themeMode = ThemeMode.system;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadThemeMode();
+  }
+
+  Future<void> _loadThemeMode() async {
+    final themeMode = await AppConfig.getThemeMode();
+    setState(() {
+      _themeMode = themeMode;
+    });
+  }
+
+  void _updateThemeMode(ThemeMode themeMode) {
+    setState(() {
+      _themeMode = themeMode;
+    });
+    AppConfig.setThemeMode(themeMode);
+  }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: AppConfig.appName,
       theme: ThemeData(
-        primarySwatch: Colors.blue,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.blue,
+          brightness: Brightness.light,
+        ),
         useMaterial3: true,
       ),
-      home: const DashboardPage(),
+      darkTheme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: Colors.blue,
+          brightness: Brightness.dark,
+        ),
+        useMaterial3: true,
+      ),
+      themeMode: _themeMode,
+      home: DashboardPage(onThemeChanged: _updateThemeMode),
     );
   }
 }
