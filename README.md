@@ -97,12 +97,15 @@ The app will appear in your applications menu. Dependencies are automatically in
 
 ## Building Deb Packages
 1. Run `flutter build linux`
-2. Move the contents of `build/linux/x64/release/bundle` to `deb/libreotp_VERSION/opt/libreotp/`
+2. Create the deb directory structure:
+   - Copy `build/linux/x64/release/bundle` to `deb/libreotp_VERSION/opt/libreotp/bundle`
+   - Copy `linux/deb-template/usr` to `deb/libreotp_VERSION/usr` (includes desktop file and icons)
 3. Update the version in `deb/libreotp_VERSION/DEBIAN/control` if needed
 4. cd to deb/
-5. Run `dpkg-deb --build libreotp_VERSION`, the deb appears in the same directory.
+5. Run `dpkg-deb --build libreotp_VERSION`, the deb appears in the same directory
 6. Install with `sudo dpkg -i libreotp_VERSION.deb`
    - Dependencies (libsecret-1-0, libjsoncpp1) will be automatically installed
+   - The app will appear in your GNOME applications menu with an icon
 
 ## Credit
 

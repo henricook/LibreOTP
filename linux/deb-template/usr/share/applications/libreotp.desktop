@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=LibreOTP
+Comment=Desktop OTP code generator for 2FAS exports
+Exec=/opt/libreotp/bundle/LibreOTP
+Icon=libreotp
+Terminal=false
+Categories=Utility;Security;
+Keywords=otp;2fa;totp;authenticator;2fas;
+StartupWMClass=libreotp
