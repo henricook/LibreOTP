@@ -1,3 +1,5 @@
+import 'package:uuid/uuid.dart';
+
 class OtpService {
   final String id;
   final String name;
@@ -6,6 +8,10 @@ class OtpService {
   final OrderInfo order;
   final String secret;
   final IconInfo icon;
+  final int usageCount;
+  final DateTime? lastUsedAt;
+
+  static const _uuid = Uuid();
 
   const OtpService({
     required this.id,
@@ -15,11 +21,26 @@ class OtpService {
     required this.order,
     required this.secret,
     this.icon = IconInfo.empty,
+    this.usageCount = 0,
+    this.lastUsedAt,
   });
 
   factory OtpService.fromJson(Map<String, dynamic> json) {
+    DateTime? lastUsedAt;
+    if (json.containsKey('lastUsedAt') && json['lastUsedAt'] != null) {
+      try {
+        lastUsedAt = DateTime.parse(json['lastUsedAt'] as String);
+      } catch (e) {
+        lastUsedAt = null;
+      }
+    }
+
+    // Generate UUID if id is missing or empty (2FAS exports don't include ids)
+    final String serviceId = json['id']?.toString() ?? '';
+    final String actualId = serviceId.isEmpty ? _uuid.v4() : serviceId;
+
     return OtpService(
-      id: json['id']?.toString() ?? '',
+      id: actualId,
       name: json['name']?.toString() ?? '',
       groupId: json['groupId']?.toString(),
       otp: OtpConfig.fromJson(
@@ -31,6 +52,8 @@ class OtpService {
           ? IconInfo.fromJson(
               json['icon'] is Map<String, dynamic> ? json['icon'] : {})
           : IconInfo.empty,
+      usageCount: json['usageCount'] as int? ?? 0,
+      lastUsedAt: lastUsedAt,
     );
   }
 
@@ -42,6 +65,7 @@ class OtpService {
       'otp': otp.toJson(),
       'order': order.toJson(),
       'secret': secret,
+      'usageCount': usageCount,
     };
 
     // Only include icon data if it's not empty
@@ -49,7 +73,36 @@ class OtpService {
       json['icon'] = icon.toJson();
     }
 
+    // Include lastUsedAt if it's not null
+    if (lastUsedAt != null) {
+      json['lastUsedAt'] = lastUsedAt!.toIso8601String();
+    }
+
     return json;
+  }
+
+  OtpService copyWith({
+    String? id,
+    String? name,
+    String? groupId,
+    OtpConfig? otp,
+    OrderInfo? order,
+    String? secret,
+    IconInfo? icon,
+    int? usageCount,
+    DateTime? lastUsedAt,
+  }) {
+    return OtpService(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      groupId: groupId ?? this.groupId,
+      otp: otp ?? this.otp,
+      order: order ?? this.order,
+      secret: secret ?? this.secret,
+      icon: icon ?? this.icon,
+      usageCount: usageCount ?? this.usageCount,
+      lastUsedAt: lastUsedAt ?? this.lastUsedAt,
+    );
   }
 }
 

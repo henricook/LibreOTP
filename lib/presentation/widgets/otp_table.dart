@@ -100,15 +100,17 @@ class OtpTable extends StatelessWidget {
       String groupName = groupNames[entry.key] ?? 'Unknown Group';
 
       // Add group header row
-      rows.add(GroupHeader(groupName: groupName));
+      rows.add(GroupHeader(key: ValueKey('header:${entry.key}'), groupName: groupName));
 
       // Add service rows
       for (int i = 0; i < entry.value.length; i++) {
         OtpService service = entry.value[i];
-        final serviceKey = '${entry.key}-$i';
-        final displayState = otpState.getOtpDisplayState(serviceKey);
+        final displayState = otpState.getOtpDisplayState(service.id);
+        // Use service.id directly - stable across re-sorts
+        // If duplicate IDs exist in data, that's a data quality issue
         rows.add(
           ServiceRow(
+            key: ValueKey(service.id),
             service: service,
             displayState: displayState,
             onTap: () => onRowTap(entry.key, i),

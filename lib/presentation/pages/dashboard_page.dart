@@ -410,6 +410,8 @@ class _DashboardPageState extends State<DashboardPage> {
                       _updateSearchQuery();
                     },
                     onChanged: (_) => _updateSearchQuery(),
+                    displayMode: otpState.displayMode,
+                    onDisplayModeChanged: (mode) => otpState.setDisplayMode(mode),
                   ),
                   Expanded(
                     child: Container(

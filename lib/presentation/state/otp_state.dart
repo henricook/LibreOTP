@@ -11,6 +11,11 @@ import '../../services/secure_storage_service.dart';
 import '../../services/twofas_icon_service.dart';
 import 'otp_display_state.dart';
 
+enum DisplayMode {
+  grouped,
+  usageBased,
+}
+
 class OtpState extends ChangeNotifier {
   final StorageRepository _storageRepository;
   final OtpGenerator _otpGenerator;
@@ -21,6 +26,9 @@ class OtpState extends ChangeNotifier {
   Map<String, List<OtpService>> _groupedServices = {};
   final Map<String, Timer?> _timers = {};
   final Map<String, OtpDisplayState> _otpDisplayStates = {};
+  Timer? _debouncedSaveTimer;
+  Timer? _usageResortTimer;
+  List<OtpService>? _usageBasedSortCache;
   String _dataDirectory = '';
   bool _isLoading = true;
   bool _requiresPassword = false;
@@ -28,6 +36,7 @@ class OtpState extends ChangeNotifier {
   bool _disposed = false;
   bool _hasExistingData = false;
   String? _selectedFilePath;
+  DisplayMode _displayMode = DisplayMode.grouped;
 
   // Helper method to yield control to allow UI updates
   Future<void> _yieldToUI([int milliseconds = 16]) async {
@@ -66,6 +75,7 @@ class OtpState extends ChangeNotifier {
   String? get encryptionError => _encryptionError;
   bool get hasExistingData => _hasExistingData;
   String? get selectedFilePath => _selectedFilePath;
+  DisplayMode get displayMode => _displayMode;
 
   OtpDisplayState getOtpDisplayState(String serviceKey) {
     return _otpDisplayStates[serviceKey] ?? OtpDisplayState.empty;
@@ -75,6 +85,8 @@ class OtpState extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _cancelAllTimers();
+    _debouncedSaveTimer?.cancel();
+    _usageResortTimer?.cancel();
     super.dispose();
   }
 
@@ -93,6 +105,23 @@ class OtpState extends ChangeNotifier {
       _timers[key]?.cancel();
       _timers.remove(key);
     }
+  }
+
+  void _scheduleDebouncedSave() {
+    // Cancel any pending save
+    _debouncedSaveTimer?.cancel();
+
+    // Schedule a new save after 2 seconds of inactivity
+    _debouncedSaveTimer = Timer(const Duration(seconds: 2), () async {
+      try {
+        await _storageRepository.saveData(
+          AppData(services: _services, groups: _groups),
+        );
+        debugPrint('Usage data saved successfully');
+      } catch (e) {
+        debugPrint('Error saving usage data: $e');
+      }
+    });
   }
 
   /// Production initialization with UI yields for smooth animations.
@@ -274,7 +303,20 @@ class OtpState extends ChangeNotifier {
 
   void setSearchQuery(String query) {
     _searchQuery = query.toLowerCase();
+    _clearUsageSortCache();
     notifyListeners();
+  }
+
+  void setDisplayMode(DisplayMode mode) {
+    _displayMode = mode;
+    _clearUsageSortCache();
+    notifyListeners();
+  }
+
+  void _clearUsageSortCache() {
+    _usageResortTimer?.cancel();
+    _usageResortTimer = null;
+    _usageBasedSortCache = null;
   }
 
   Map<String, List<OtpService>> _groupServicesByGroup() {
@@ -298,13 +340,64 @@ class OtpState extends ChangeNotifier {
     return groupedData;
   }
 
+  Map<String, List<OtpService>> _groupServicesByUsage() {
+    // Use cached sort if available (prevents immediate re-sort after clicking)
+    final List<OtpService> sortedServices;
+
+    if (_usageBasedSortCache != null) {
+      // Use cached order - update service data but preserve order
+      sortedServices = _usageBasedSortCache!.map((cachedService) {
+        // Find the current version of this service with updated usage counts
+        return _services.firstWhere(
+          (s) => s.id == cachedService.id,
+          orElse: () => cachedService,
+        );
+      }).toList();
+    } else {
+      // Compute fresh sort
+      sortedServices = List<OtpService>.from(_services)
+        ..sort((a, b) {
+          // Primary sort: usage count (descending)
+          final countComparison = b.usageCount.compareTo(a.usageCount);
+          if (countComparison != 0) {
+            return countComparison;
+          }
+
+          // Tie-breaker: last used time (descending - most recent first)
+          // Handle null values: never-used items go to the bottom
+          if (a.lastUsedAt == null && b.lastUsedAt == null) {
+            return 0; // Both never used, maintain stable order
+          }
+          if (a.lastUsedAt == null) {
+            return 1; // a is never used, b wins
+          }
+          if (b.lastUsedAt == null) {
+            return -1; // b is never used, a wins
+          }
+          return b.lastUsedAt!.compareTo(a.lastUsedAt!);
+        });
+
+      // Cache the fresh sort
+      _usageBasedSortCache = sortedServices;
+    }
+
+    return {
+      'Most Used': sortedServices,
+    };
+  }
+
   Map<String, List<OtpService>> _filterAndGroupData() {
+    // Get the appropriate grouping based on display mode
+    final baseGrouping = _displayMode == DisplayMode.usageBased
+        ? _groupServicesByUsage()
+        : _groupedServices;
+
     if (_searchQuery.isEmpty) {
-      return _groupedServices;
+      return baseGrouping;
     }
 
     Map<String, List<OtpService>> filteredData = {};
-    _groupedServices.forEach((groupId, services) {
+    baseGrouping.forEach((groupId, services) {
       final filteredServices = services
           .where((service) =>
               service.name.toLowerCase().contains(_searchQuery) ||
@@ -336,8 +429,18 @@ class OtpState extends ChangeNotifier {
 
     final service = services[serviceIndex];
 
-    // Create unique service key using group and index to ensure uniqueness
-    final String serviceKey = '$groupId-$serviceIndex';
+    // Increment usage count and update timestamp
+    final serviceIndexInList = _services.indexWhere((s) => s.id == service.id);
+    if (serviceIndexInList != -1) {
+      _services[serviceIndexInList] = service.copyWith(
+        usageCount: service.usageCount + 1,
+        lastUsedAt: DateTime.now().toUtc(),
+      );
+      _scheduleDebouncedSave();
+    }
+
+    // Use service ID as the unique key
+    final String serviceKey = service.id;
 
     // Generate fresh OTP code each time (time-based)
     final String newCode = _otpGenerator.generateOtp(service);
@@ -363,7 +466,24 @@ class OtpState extends ChangeNotifier {
 
     _startOtpTimer(serviceKey, timerKey, timeRemaining);
 
+    // Schedule delayed resort refresh (60 seconds) to keep item in place while reading OTP
+    _scheduleUsageResortRefresh();
+
     notifyListeners();
+  }
+
+  void _scheduleUsageResortRefresh() {
+    // Cancel any existing timer
+    _usageResortTimer?.cancel();
+
+    // Schedule refresh after 60 seconds
+    _usageResortTimer = Timer(const Duration(seconds: 60), () {
+      if (!_disposed) {
+        // Clear cache to trigger fresh sort on next build
+        _usageBasedSortCache = null;
+        notifyListeners();
+      }
+    });
   }
 
   void _startOtpTimer(String serviceKey, String timerKey, int timeRemaining) {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:libreotp/presentation/widgets/search_bar.dart';
+import 'package:libreotp/presentation/state/otp_state.dart';
 
 void main() {
   group('SearchBarWidget', () {
@@ -8,6 +9,8 @@ void main() {
       String? initialValue,
       ValueChanged<String>? onChanged,
       VoidCallback? onClear,
+      DisplayMode? displayMode,
+      ValueChanged<DisplayMode>? onDisplayModeChanged,
     }) {
       final controller = TextEditingController(text: initialValue);
 
@@ -17,6 +20,8 @@ void main() {
             controller: controller,
             onChanged: onChanged ?? (value) {},
             onClear: onClear ?? () {},
+            displayMode: displayMode ?? DisplayMode.grouped,
+            onDisplayModeChanged: onDisplayModeChanged ?? (mode) {},
           ),
         ),
       );
