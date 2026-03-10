@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import '../state/otp_state.dart';
+import '../../config/display_mode.dart';
 
 class SearchBarWidget extends StatelessWidget {
   final TextEditingController controller;

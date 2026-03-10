@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:libreotp/config/display_mode.dart';
 import 'package:libreotp/presentation/widgets/search_bar.dart';
-import 'package:libreotp/presentation/state/otp_state.dart';
 
 void main() {
   group('SearchBarWidget', () {

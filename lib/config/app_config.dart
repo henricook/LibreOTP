@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'display_mode.dart';
 
 class AppConfig {
   static const String appName = 'LibreOTP';
   static const String githubUrl = 'https://github.com/henricook/libreotp';
 
-  // Theme preference key
+  // Preference keys
   static const String _themePreferenceKey = 'theme_mode';
+  static const String _displayModePreferenceKey = 'display_mode';
 
   // Cached app title to avoid repeated async calls
   static String? _cachedAppTitle;
@@ -79,6 +81,22 @@ class AppConfig {
     }
 
     await prefs.setString(_themePreferenceKey, themeModeString);
+  }
+
+  // Display mode configuration
+  static Future<DisplayMode> getDisplayMode() async {
+    final prefs = await SharedPreferences.getInstance();
+    final name = prefs.getString(_displayModePreferenceKey);
+    try {
+      return DisplayMode.values.byName(name ?? 'grouped');
+    } catch (_) {
+      return DisplayMode.grouped;
+    }
+  }
+
+  static Future<void> setDisplayMode(DisplayMode displayMode) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_displayModePreferenceKey, displayMode.name);
   }
 
   // OTP configuration

@@ -1,10 +1,12 @@
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:libreotp/data/models/group.dart';
 import 'package:libreotp/data/models/otp_service.dart';
 import 'package:libreotp/data/repositories/storage_repository.dart';
 import 'package:libreotp/domain/services/otp_service.dart';
+import 'package:libreotp/config/display_mode.dart';
 import 'package:libreotp/presentation/state/otp_display_state.dart';
 import 'package:libreotp/presentation/state/otp_state.dart';
 
@@ -12,44 +14,32 @@ import 'package:libreotp/presentation/state/otp_state.dart';
 class MockStorageRepository extends StorageRepository {
   List<Group> _groups = [];
   List<OtpService> _services = [];
-  bool shouldSimulateFileNotExists = false;
   bool shouldThrowException = false;
+  late File _testFile;
+
+  MockStorageRepository() {
+    final tempDir = Directory.systemTemp;
+    _testFile = File('${tempDir.path}/test_data.json');
+    _testFile.writeAsStringSync('{"groups":[],"services":[]}');
+  }
 
   @override
   Future<AppData> loadData({String? password}) async {
     if (shouldThrowException) {
       throw Exception('Test exception');
     }
-    // Add a small delay to simulate real behavior but keep it short for tests
-    await Future.delayed(const Duration(milliseconds: 5));
     return AppData(groups: _groups, services: _services);
   }
 
   @override
-  Future<File> getLocalFile() async {
-    // Use a real temporary file for testing to avoid mocking complexity
-    final tempDir = Directory.systemTemp;
-    final testFile = File('${tempDir.path}/test_data.json');
+  Future<void> saveData(AppData data) async {}
 
-    if (!shouldSimulateFileNotExists) {
-      // Create the file with test data
-      await testFile.writeAsString('''
-{
-  "groups": [],
-  "services": []
-}
-''');
-    } else {
-      // Ensure file doesn't exist
-      if (await testFile.exists()) {
-        await testFile.delete();
-      }
-    }
+  @override
+  Future<File> getLocalFile() async => _testFile;
 
-    return testFile;
-  }
+  @override
+  Future<bool> hasExistingData() async => _testFile.existsSync();
 
-  // Test helper methods
   void setTestData(List<Group> groups, List<OtpService> services) {
     _groups = groups;
     _services = services;
@@ -66,7 +56,6 @@ class MockOtpGenerator extends OtpGenerator {
   @override
   int getRemainingSeconds(OtpService service) => _nextRemainingSeconds;
 
-  // Test helper methods
   void setNextCode(String code) => _nextCode = code;
   void setNextRemainingSeconds(int seconds) => _nextRemainingSeconds = seconds;
 }
@@ -76,26 +65,32 @@ void main() {
     late MockStorageRepository mockRepository;
     late MockOtpGenerator mockGenerator;
     late OtpState otpState;
+    bool disposed = false;
 
     setUp(() async {
+      SharedPreferences.setMockInitialValues({});
       mockRepository = MockStorageRepository();
       mockGenerator = MockOtpGenerator();
+      disposed = false;
       otpState = OtpState(mockRepository, mockGenerator);
-      // Call initialization directly for tests since addPostFrameCallback doesn't work in test environment
       await otpState.initializeData();
     });
 
+    void disposeState() {
+      if (!disposed) {
+        otpState.dispose();
+        disposed = true;
+      }
+    }
+
     tearDown(() async {
-      // Give any pending async operations a chance to complete before disposing
       await Future.delayed(const Duration(milliseconds: 10));
-      otpState.dispose();
-      // Give a moment for disposal to complete
+      disposeState();
       await Future.delayed(const Duration(milliseconds: 10));
     });
 
     group('Initialization', () {
       test('should eventually finish loading', () {
-        // Initialization should already be completed in setUp
         expect(otpState.isLoading, isFalse);
       });
 
@@ -125,14 +120,13 @@ void main() {
 
       testWidgets('should handle generateOtp method calls',
           (WidgetTester tester) async {
-        await tester.pumpWidget(MaterialApp(home: Container()));
+        await tester.pumpWidget(MaterialApp(home: Scaffold(body: Container())));
         final context = tester.element(find.byType(Container));
 
         expect(() => otpState.generateOtp('invalid-group', 0, context),
             returnsNormally);
 
-        // Pump the timer to completion to avoid test failures
-        await tester.pumpAndSettle();
+        disposeState();
       });
     });
 
@@ -234,10 +228,12 @@ void main() {
           usageCount: 0,
         );
 
-        mockRepository.setTestData([], [testService]);
-        await otpState.initializeData();
+        await tester.runAsync(() async {
+          mockRepository.setTestData([], [testService]);
+          await otpState.initializeData();
+        });
 
-        await tester.pumpWidget(MaterialApp(home: Container()));
+        await tester.pumpWidget(MaterialApp(home: Scaffold(body: Container())));
         final context = tester.element(find.byType(Container));
 
         expect(otpState.services.first.usageCount, equals(0));
@@ -248,7 +244,7 @@ void main() {
 
         expect(otpState.services.first.usageCount, equals(1));
 
-        await tester.pumpAndSettle();
+        disposeState();
       });
 
       testWidgets('should update lastUsedAt timestamp when generating OTP',
@@ -262,10 +258,12 @@ void main() {
           lastUsedAt: null,
         );
 
-        mockRepository.setTestData([], [testService]);
-        await otpState.initializeData();
+        await tester.runAsync(() async {
+          mockRepository.setTestData([], [testService]);
+          await otpState.initializeData();
+        });
 
-        await tester.pumpWidget(MaterialApp(home: Container()));
+        await tester.pumpWidget(MaterialApp(home: Scaffold(body: Container())));
         final context = tester.element(find.byType(Container));
 
         expect(otpState.services.first.lastUsedAt, isNull);
@@ -287,10 +285,10 @@ void main() {
                 .isBefore(afterTime.add(const Duration(seconds: 1))),
             isTrue);
 
-        await tester.pumpAndSettle();
+        disposeState();
       });
 
-      testWidgets('should increment count on multiple clicks',
+      testWidgets('should not increment count on repeated clicks with same code',
           (WidgetTester tester) async {
         final testService = OtpService(
           id: 'service-1',
@@ -301,27 +299,74 @@ void main() {
           usageCount: 0,
         );
 
-        mockRepository.setTestData([], [testService]);
-        await otpState.initializeData();
+        await tester.runAsync(() async {
+          mockRepository.setTestData([], [testService]);
+          await otpState.initializeData();
+        });
 
-        await tester.pumpWidget(MaterialApp(home: Container()));
+        await tester.pumpWidget(MaterialApp(home: Scaffold(body: Container())));
         final context = tester.element(find.byType(Container));
 
         otpState.setDisplayMode(DisplayMode.usageBased);
 
+        // First click increments
         otpState.generateOtp('Most Used', 0, context);
         await tester.pump();
         expect(otpState.services.first.usageCount, equals(1));
 
+        // Same code - should NOT increment
+        otpState.generateOtp('Most Used', 0, context);
+        await tester.pump();
+        expect(otpState.services.first.usageCount, equals(1));
+
+        // Same code again - still should NOT increment
+        otpState.generateOtp('Most Used', 0, context);
+        await tester.pump();
+        expect(otpState.services.first.usageCount, equals(1));
+
+        disposeState();
+      });
+
+      testWidgets('should increment count when code changes between clicks',
+          (WidgetTester tester) async {
+        final testService = OtpService(
+          id: 'service-1',
+          name: 'Test Service',
+          secret: 'JBSWY3DPEHPK3PXP',
+          otp: const OtpConfig(account: 'test@example.com', issuer: 'Test'),
+          order: const OrderInfo(position: 0),
+          usageCount: 0,
+        );
+
+        await tester.runAsync(() async {
+          mockRepository.setTestData([], [testService]);
+          await otpState.initializeData();
+        });
+
+        await tester.pumpWidget(MaterialApp(home: Scaffold(body: Container())));
+        final context = tester.element(find.byType(Container));
+
+        otpState.setDisplayMode(DisplayMode.usageBased);
+
+        // First click increments
+        mockGenerator.setNextCode('111111');
+        otpState.generateOtp('Most Used', 0, context);
+        await tester.pump();
+        expect(otpState.services.first.usageCount, equals(1));
+
+        // Different code - should increment
+        mockGenerator.setNextCode('222222');
         otpState.generateOtp('Most Used', 0, context);
         await tester.pump();
         expect(otpState.services.first.usageCount, equals(2));
 
+        // Different code again - should increment
+        mockGenerator.setNextCode('333333');
         otpState.generateOtp('Most Used', 0, context);
         await tester.pump();
         expect(otpState.services.first.usageCount, equals(3));
 
-        await tester.pumpAndSettle();
+        disposeState();
       });
     });
 
@@ -472,10 +517,12 @@ void main() {
           usageCount: 10,
         );
 
-        mockRepository.setTestData([], [service1, service2]);
-        await otpState.initializeData();
+        await tester.runAsync(() async {
+          mockRepository.setTestData([], [service1, service2]);
+          await otpState.initializeData();
+        });
 
-        await tester.pumpWidget(MaterialApp(home: Container()));
+        await tester.pumpWidget(MaterialApp(home: Scaffold(body: Container())));
         final context = tester.element(find.byType(Container));
 
         otpState.setDisplayMode(DisplayMode.usageBased);
@@ -493,9 +540,9 @@ void main() {
         final afterClick = otpState.groupedServices['Most Used']!;
         expect(afterClick[0].id, equals('service-2')); // Still first
         expect(afterClick[1].id, equals('service-1')); // Still second
-        expect(afterClick[1].usageCount, equals(3)); // But count updated
+        expect(afterClick[1].usageCount, equals(3)); // Count updated (first click = new code)
 
-        await tester.pumpAndSettle();
+        disposeState();
       });
 
       testWidgets('should re-sort after 60 seconds', (WidgetTester tester) async {
@@ -516,17 +563,20 @@ void main() {
           usageCount: 5,
         );
 
-        mockRepository.setTestData([], [service1, service2]);
-        await otpState.initializeData();
+        await tester.runAsync(() async {
+          mockRepository.setTestData([], [service1, service2]);
+          await otpState.initializeData();
+        });
 
-        await tester.pumpWidget(MaterialApp(home: Container()));
+        await tester.pumpWidget(MaterialApp(home: Scaffold(body: Container())));
         final context = tester.element(find.byType(Container));
 
         otpState.setDisplayMode(DisplayMode.usageBased);
         await tester.pump();
 
-        // Click service1 multiple times to make it higher usage
+        // Click service1 multiple times with different codes to make it higher usage
         for (int i = 0; i < 4; i++) {
+          mockGenerator.setNextCode('code-$i');
           otpState.generateOtp('Most Used', 1, context);
           await tester.pump();
         }
@@ -535,7 +585,7 @@ void main() {
         var services = otpState.groupedServices['Most Used']!;
         expect(services[0].id, equals('service-2'));
         expect(services[1].id, equals('service-1'));
-        expect(services[1].usageCount, equals(6)); // 2 + 4 clicks
+        expect(services[1].usageCount, equals(6)); // 2 + 4 clicks (each with different code)
 
         // Advance time by 60 seconds to trigger resort
         await tester.pump(const Duration(seconds: 60));
@@ -545,7 +595,7 @@ void main() {
         expect(services[0].id, equals('service-1')); // Now first (6 uses)
         expect(services[1].id, equals('service-2')); // Now second (5 uses)
 
-        await tester.pumpAndSettle();
+        disposeState();
       });
 
       test('should clear cache when search query changes', () async {
@@ -566,8 +616,7 @@ void main() {
         // Trigger cache by getting grouped services
         final _ = otpState.groupedServices;
 
-        // Change search should clear cache (we can't directly verify cache,
-        // but we verify it doesn't crash and behaves correctly)
+        // Change search should clear cache
         expect(() => otpState.setSearchQuery('test'), returnsNormally);
         expect(() => otpState.groupedServices, returnsNormally);
       });
@@ -623,10 +672,12 @@ void main() {
           usageCount: 3,
         );
 
-        mockRepository.setTestData([], [service1, service2, service3]);
-        await otpState.initializeData();
+        await tester.runAsync(() async {
+          mockRepository.setTestData([], [service1, service2, service3]);
+          await otpState.initializeData();
+        });
 
-        await tester.pumpWidget(MaterialApp(home: Container()));
+        await tester.pumpWidget(MaterialApp(home: Scaffold(body: Container())));
         final context = tester.element(find.byType(Container));
 
         // Switch to usage-based mode
@@ -640,6 +691,7 @@ void main() {
         expect(services[2].name, equals('GitHub'));
 
         // Click GitHub (at position 2) to increase its usage
+        mockGenerator.setNextCode('code-1');
         otpState.generateOtp('Most Used', 2, context);
         await tester.pump();
 
@@ -650,10 +702,11 @@ void main() {
         expect(services[2].name, equals('GitHub')); // Still here
         expect(services[2].usageCount, equals(2)); // Count updated
 
-        // Click it again
+        // Click it again with a different code (new TOTP period)
+        mockGenerator.setNextCode('code-2');
         otpState.generateOtp('Most Used', 2, context);
         await tester.pump();
-        expect(services[2].usageCount, equals(3)); // Now tied with AWS
+        expect(otpState.groupedServices['Most Used']![2].usageCount, equals(3)); // Now tied with AWS
 
         // Still at position 2 (cache still active)
         services = otpState.groupedServices['Most Used']!;
@@ -669,7 +722,7 @@ void main() {
         expect(services[1].name, equals('GitHub')); // Moved up due to recent use
         expect(services[2].name, equals('AWS'));
 
-        await tester.pumpAndSettle();
+        disposeState();
       });
     });
   });

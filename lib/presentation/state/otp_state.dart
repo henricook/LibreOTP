@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import '../../config/app_config.dart';
+import '../../config/display_mode.dart';
 import '../../data/models/otp_service.dart';
 import '../../data/models/group.dart';
 import '../../data/repositories/storage_repository.dart';
@@ -10,11 +13,6 @@ import '../../services/twofas_decryption_service.dart';
 import '../../services/secure_storage_service.dart';
 import '../../services/twofas_icon_service.dart';
 import 'otp_display_state.dart';
-
-enum DisplayMode {
-  grouped,
-  usageBased,
-}
 
 class OtpState extends ChangeNotifier {
   final StorageRepository _storageRepository;
@@ -37,6 +35,7 @@ class OtpState extends ChangeNotifier {
   bool _hasExistingData = false;
   String? _selectedFilePath;
   DisplayMode _displayMode = DisplayMode.grouped;
+  bool _dataInitialized = false;
 
   // Helper method to yield control to allow UI updates
   Future<void> _yieldToUI([int milliseconds = 16]) async {
@@ -135,7 +134,7 @@ class OtpState extends ChangeNotifier {
   /// The multiple 16ms yields (approximately one frame at 60fps) give the UI
   /// thread time to render frames smoothly during startup.
   Future<void> _initializeDataWithYields() async {
-    if (_disposed) return;
+    if (_disposed || _dataInitialized) return;
 
     _isLoading = true;
     _requiresPassword = false;
@@ -179,10 +178,16 @@ class OtpState extends ChangeNotifier {
 
   Future<void> _doInitialization({bool withUIYields = false}) async {
     try {
-      // Check if file exists and if it's encrypted
-      final file = await _storageRepository.getLocalFile();
+      // Load preferences and file info concurrently
+      final results = await Future.wait([
+        AppConfig.getDisplayMode().catchError((_) => DisplayMode.grouped),
+        _storageRepository.getLocalFile(),
+        _storageRepository.hasExistingData(),
+      ]);
+      _displayMode = results[0] as DisplayMode;
+      final file = results[1] as File;
       _dataDirectory = file.parent.path;
-      _hasExistingData = await _storageRepository.hasExistingData();
+      _hasExistingData = results[2] as bool;
 
       // Yield after file system access to keep UI responsive
       if (withUIYields) await _yieldToUI(16);
@@ -258,6 +263,7 @@ class OtpState extends ChangeNotifier {
     }
 
     _isLoading = false;
+    _dataInitialized = true;
     if (!_disposed) {
       notifyListeners();
     }
@@ -310,6 +316,9 @@ class OtpState extends ChangeNotifier {
   void setDisplayMode(DisplayMode mode) {
     _displayMode = mode;
     _clearUsageSortCache();
+    AppConfig.setDisplayMode(mode).catchError((e) {
+      debugPrint('Could not persist display mode preference: $e');
+    });
     notifyListeners();
   }
 
@@ -429,22 +438,33 @@ class OtpState extends ChangeNotifier {
 
     final service = services[serviceIndex];
 
-    // Increment usage count and update timestamp
-    final serviceIndexInList = _services.indexWhere((s) => s.id == service.id);
-    if (serviceIndexInList != -1) {
-      _services[serviceIndexInList] = service.copyWith(
-        usageCount: service.usageCount + 1,
-        lastUsedAt: DateTime.now().toUtc(),
-      );
-      _scheduleDebouncedSave();
-    }
-
     // Use service ID as the unique key
     final String serviceKey = service.id;
 
-    // Generate fresh OTP code each time (time-based)
+    // Generate fresh OTP code (time-based)
     final String newCode = _otpGenerator.generateOtp(service);
     final int timeRemaining = _otpGenerator.getRemainingSeconds(service);
+
+    // Check if this is a new code (different TOTP period) or first generation
+    final existingState = _otpDisplayStates[serviceKey];
+    final bool isNewCode =
+        existingState == null || existingState.otpCode != newCode;
+
+    // Only increment usage count when the code is different (new TOTP period)
+    if (isNewCode) {
+      final serviceIndexInList =
+          _services.indexWhere((s) => s.id == service.id);
+      if (serviceIndexInList != -1) {
+        _services[serviceIndexInList] = service.copyWith(
+          usageCount: service.usageCount + 1,
+          lastUsedAt: DateTime.now().toUtc(),
+        );
+        _scheduleDebouncedSave();
+      }
+
+      // Schedule delayed resort refresh only when usage actually changed
+      _scheduleUsageResortRefresh();
+    }
 
     // Create unique timer key using timestamp to allow multiple generations
     final String timerKey =
@@ -465,9 +485,6 @@ class OtpState extends ChangeNotifier {
         context, 'OTP Code Copied to Clipboard!');
 
     _startOtpTimer(serviceKey, timerKey, timeRemaining);
-
-    // Schedule delayed resort refresh (60 seconds) to keep item in place while reading OTP
-    _scheduleUsageResortRefresh();
 
     notifyListeners();
   }
