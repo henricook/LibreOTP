@@ -42,7 +42,7 @@ The app will appear in your applications menu. Dependencies are automatically in
    # OR  
    sudo apt install libsecret-1-0 libjsoncpp1   # Older Ubuntu versions
    ```
-4. Run: `chmod +x LibreOTP && ./LibreOTP`
+4. Run: `chmod +x libreotp && ./libreotp`
 
 **🪟 Windows**
 1. Download `libreotp-windows.zip` from the [releases page](https://github.com/henricook/LibreOTP/releases)
