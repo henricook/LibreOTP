@@ -10,6 +10,11 @@ class AppConfig {
   // Preference keys
   static const String _themePreferenceKey = 'theme_mode';
   static const String _displayModePreferenceKey = 'display_mode';
+  static const String _windowXKey = 'window_x';
+  static const String _windowYKey = 'window_y';
+  static const String _windowWidthKey = 'window_width';
+  static const String _windowHeightKey = 'window_height';
+  static const String _windowMaximizedKey = 'window_maximized';
 
   // Cached app title to avoid repeated async calls
   static String? _cachedAppTitle;
@@ -97,6 +102,37 @@ class AppConfig {
   static Future<void> setDisplayMode(DisplayMode displayMode) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_displayModePreferenceKey, displayMode.name);
+  }
+
+  // Window bounds persistence
+  static Future<Rect?> getWindowBounds() async {
+    final prefs = await SharedPreferences.getInstance();
+    final x = prefs.getDouble(_windowXKey);
+    final y = prefs.getDouble(_windowYKey);
+    final width = prefs.getDouble(_windowWidthKey);
+    final height = prefs.getDouble(_windowHeightKey);
+    if (x != null && y != null && width != null && height != null) {
+      return Rect.fromLTWH(x, y, width, height);
+    }
+    return null;
+  }
+
+  static Future<void> setWindowBounds(Rect bounds) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setDouble(_windowXKey, bounds.left);
+    await prefs.setDouble(_windowYKey, bounds.top);
+    await prefs.setDouble(_windowWidthKey, bounds.width);
+    await prefs.setDouble(_windowHeightKey, bounds.height);
+  }
+
+  static Future<bool> getWindowMaximized() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_windowMaximizedKey) ?? false;
+  }
+
+  static Future<void> setWindowMaximized(bool maximized) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_windowMaximizedKey, maximized);
   }
 
   // OTP configuration

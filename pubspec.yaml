@@ -47,6 +47,8 @@ dependencies:
   shared_preferences: ^2.3.3
   file_picker: ^10.3.3
   uuid: ^4.5.1
+  window_manager: ^0.5.1
+  screen_retriever: ^0.2.0
 
 dev_dependencies:
   flutter_test:
