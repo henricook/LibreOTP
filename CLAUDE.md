@@ -21,10 +21,12 @@ The app follows a layered architecture with Provider for state management:
 - **`lib/main.dart`** - Entry point. Sets up `ChangeNotifierProvider<OtpState>` and the `MaterialApp` with theme support.
 - **`lib/config/app_config.dart`** - App-wide constants (name, GitHub URL, OTP defaults) and theme/version helpers.
 - **`lib/data/models/`** - Data models: `OtpService` (2FAS service with OTP config, usage tracking) and `Group` (2FAS grouping).
-- **`lib/data/repositories/storage_repository.dart`** - File I/O layer. Reads/writes `data.json`, handles file picker for import, delegates decryption to `TwoFasDecryptionService`. Contains `AppData` wrapper class.
+- **`lib/data/repositories/storage_repository.dart`** - File I/O layer. Reads/writes plaintext `data.json` and the optional encrypted `data.bin` vault (preferred over `data.json` when both exist; saved atomically via temp+backup rename with crash recovery), handles file picker for import, delegates decryption to `TwoFasDecryptionService`/`LocalVaultEncryptionService`. Contains `AppData` wrapper class.
 - **`lib/domain/services/otp_service.dart`** - TOTP code generation using the `otp` package.
 - **`lib/services/twofas_decryption_service.dart`** - Decrypts 2FAS encrypted exports (PBKDF2 key derivation + AES-GCM). Includes password verification via reference field.
-- **`lib/services/secure_storage_service.dart`** - Stores/retrieves encryption passwords via `flutter_secure_storage`.
+- **`lib/services/local_vault_encryption_service.dart`** - Encrypts/decrypts the local `data.bin` vault (PBKDF2-HMAC-SHA256 at 600k iterations + AES-256-GCM with AAD-bound header; KDF runs in an isolate).
+- **`lib/services/crypto_primitives.dart`** - Thin pointycastle wrappers (PBKDF2, AES-GCM) shared by the vault and 2FAS decryption services.
+- **`lib/services/secure_storage_service.dart`** - Stores/retrieves 2FAS backup passwords via `flutter_secure_storage` (the local vault password is never persisted).
 - **`lib/services/twofas_icon_service.dart`** - Fetches service icons from 2FAS icon repository.
 - **`lib/presentation/state/otp_state.dart`** - Central `ChangeNotifier`. Manages services list, groups, search, display modes (grouped vs usage-based), OTP generation with countdown timers, and debounced persistence. This is the core business logic orchestrator.
 - **`lib/presentation/state/otp_display_state.dart`** - Immutable state for a single OTP display (code + validity countdown).
@@ -33,10 +35,11 @@ The app follows a layered architecture with Provider for state management:
 - **`lib/utils/`** - Clipboard and JSON utilities.
 
 ### Key data flow
-1. `StorageRepository` reads `data.json` from platform-specific app support directory
-2. If encrypted, `TwoFasDecryptionService` decrypts using stored or user-provided password
+1. `StorageRepository` loads from the platform-specific app support directory: encrypted `data.bin` vault first (prompting for its password), otherwise plaintext `data.json`
+2. Encrypted 2FAS backups inside `data.json` are decrypted by `TwoFasDecryptionService` using a stored or user-provided password; the `data.bin` vault is decrypted by `LocalVaultEncryptionService`
 3. `OtpState` holds parsed services/groups, groups them, handles search filtering
-4. On OTP generation: code is generated, copied to clipboard, countdown timer starts, usage stats are updated and debounce-saved
+4. On OTP generation: code is generated, copied to clipboard, countdown timer starts, usage stats are updated and debounce-saved (re-encrypted with the cached session key when the vault is active)
+5. Users with plaintext data are offered a one-time migration into the encrypted vault; migration verifies the encrypted copy before deleting `data.json`
 
 ### Testing patterns
 - `OtpState` tests call `await state.initializeData()` manually (auto-init via `WidgetsBinding` is skipped in test environments)
@@ -57,9 +60,10 @@ The app follows a layered architecture with Provider for state management:
 - The app supports 2FAS groups and fetches service icons from 2FAS icon repository
 
 ## Data File Paths
-- Windows: `%APPDATA%\libreotp\data.json`
-- macOS: `~/Library/Application Support/com.henricook.libreotp/data.json`
-- Linux: `~/.local/share/libreotp/data.json`
+Plaintext `data.json`, or encrypted vault `data.bin` when local encryption is enabled (`data.bin` wins if both exist):
+- Windows: `%APPDATA%\libreotp\`
+- macOS: `~/Library/Application Support/com.henricook.libreotp/`
+- Linux: `~/.local/share/libreotp/`
 
 ## Notable Dependencies
 - `flutter_secure_storage` uses a patched fork (`m-berto/flutter_secure_storage` patch-2 branch) via `dependency_overrides` in `pubspec.yaml` to fix Linux compilation issues

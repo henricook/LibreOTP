@@ -15,6 +15,8 @@ class AppConfig {
   static const String _windowWidthKey = 'window_width';
   static const String _windowHeightKey = 'window_height';
   static const String _windowMaximizedKey = 'window_maximized';
+  static const String _encryptionMigrationDismissedKey =
+      'encryption_migration_dismissed';
 
   // Cached app title to avoid repeated async calls
   static String? _cachedAppTitle;
@@ -103,6 +105,17 @@ class AppConfig {
   static Future<void> setDisplayMode(DisplayMode displayMode) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString(_displayModePreferenceKey, displayMode.name);
+  }
+
+  // Encryption migration prompt suppression
+  static Future<bool> getEncryptionMigrationDismissed() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_encryptionMigrationDismissedKey) ?? false;
+  }
+
+  static Future<void> setEncryptionMigrationDismissed(bool dismissed) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_encryptionMigrationDismissedKey, dismissed);
   }
 
   // Window bounds persistence
