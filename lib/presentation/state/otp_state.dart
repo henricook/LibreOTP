@@ -686,8 +686,13 @@ class OtpState extends ChangeNotifier {
     }
   }
 
-  /// Imports a 2FAS backup file and replaces current data
-  Future<bool> importBackupFile(String filePath, {String? password}) async {
+  /// Imports a 2FAS backup file and merges it into the current data.
+  Future<ImportBackupResult?> importBackupFile(
+    String filePath, {
+    String? password,
+  }) async {
+    // A pending debounced save holds pre-merge state; letting it fire during
+    // the import's own save could clobber the merged data on disk.
     _debouncedSaveTimer?.cancel();
     _isLoading = true;
     _encryptionError = null;
@@ -699,39 +704,54 @@ class OtpState extends ChangeNotifier {
             ? BusyOperation.encryptingLocalData
             : null;
 
-    Future<bool> performImport() async {
+    Future<ImportBackupResult?> performImport() async {
+      // Snapshot so a failed persist leaves the current data untouched.
+      final previousServices = _services;
+      final previousGroups = _groups;
       try {
         final data = await _storageRepository.importBackupFile(
           filePath,
           password: password,
         );
-        _services = data.services;
-        _groups = data.groups;
+        final merged = _mergeImportedData(data);
+        _services = merged.services;
+        _groups = merged.groups;
         _setStorageModeAfterImport();
         _groupedServices = _groupServicesByGroup();
         _hasExistingData = true;
         _requiresPassword = false;
         _passwordPromptReason = PasswordPromptReason.none;
+
+        try {
+          // Vault-aware: re-encrypts into data.bin when a vault is active,
+          // otherwise writes plaintext. Never a raw plaintext saveData().
+          await _persistCurrentData();
+        } catch (_) {
+          _services = previousServices;
+          _groups = previousGroups;
+          _groupedServices = _groupServicesByGroup();
+          rethrow;
+        }
+
         _isLoading = false;
-        await _persistCurrentData();
         notifyListeners();
 
         // Preload icons for imported services asynchronously
         _preloadIconsForServices();
 
-        return true;
+        return merged.result;
       } on StoragePasswordRequiredException catch (_) {
         _requiresPassword = true;
         _passwordPromptReason = PasswordPromptReason.encryptedBackup;
         _encryptionError = null;
         _isLoading = false;
         notifyListeners();
-        return false;
+        return null;
       } catch (e) {
         _encryptionError = 'Failed to import backup: $e';
         _isLoading = false;
         notifyListeners();
-        return false;
+        return null;
       }
     }
 
@@ -743,19 +763,148 @@ class OtpState extends ChangeNotifier {
   }
 
   /// Reimports data by opening file picker and importing selected file
-  Future<bool> reimportData() async {
+  Future<ImportBackupResult?> reimportData() async {
     final filePath = await pickBackupFile();
     if (filePath != null) {
       _selectedFilePath = filePath;
       return await importBackupFile(filePath);
     }
-    return false;
+    return null;
   }
 
   /// Imports the currently selected file with a password (for encrypted backups)
-  Future<bool> importSelectedFileWithPassword(String password) async {
-    if (_selectedFilePath == null) return false;
+  Future<ImportBackupResult?> importSelectedFileWithPassword(
+    String password,
+  ) async {
+    if (_selectedFilePath == null) return null;
     return await importBackupFile(_selectedFilePath!, password: password);
+  }
+
+  /// Computes the merge of [importedData] into the current data without
+  /// mutating state; the caller persists the result before committing it.
+  _MergedImportData _mergeImportedData(AppData importedData) {
+    final existingSecrets =
+        _services.map((service) => _normalizeSecret(service.secret)).toSet();
+    final existingIds = _services.map((service) => service.id).toSet();
+    final mergedGroups = List<Group>.from(_groups);
+    final existingGroupIds = mergedGroups.map((group) => group.id).toSet();
+    final importedGroupsById = {
+      for (final group in importedData.groups) group.id: group,
+    };
+
+    final addedServices = <OtpService>[];
+    final ignoredServices = <OtpService>[];
+
+    for (final service in importedData.services) {
+      final normalizedSecret = _normalizeSecret(service.secret);
+      if (!existingSecrets.add(normalizedSecret)) {
+        ignoredServices.add(service);
+        continue;
+      }
+
+      final resolvedGroupId = _resolveImportedGroupId(
+        service.groupId,
+        existingGroupIds,
+        importedGroupsById,
+        mergedGroups,
+      );
+
+      var mergedService = service.withGroupId(resolvedGroupId);
+      if (!existingIds.add(mergedService.id)) {
+        // A different service already uses this id; remap so ids stay unique.
+        var suffix = 1;
+        var candidate = '${mergedService.id}-imported';
+        while (!existingIds.add(candidate)) {
+          suffix++;
+          candidate = '${mergedService.id}-imported-$suffix';
+        }
+        mergedService = mergedService.copyWith(id: candidate);
+      }
+
+      addedServices.add(mergedService);
+    }
+
+    final mergedServices = _reassignMergedOrder([
+      ..._services,
+      ...addedServices,
+    ], addedServices);
+
+    return _MergedImportData(
+      services: mergedServices,
+      groups: mergedGroups,
+      result: ImportBackupResult(
+        addedServices: addedServices,
+        ignoredServices: ignoredServices,
+      ),
+    );
+  }
+
+  String _normalizeSecret(String secret) {
+    return secret.replaceAll(RegExp(r'\s+'), '').toUpperCase();
+  }
+
+  String? _resolveImportedGroupId(
+    String? groupId,
+    Set<String> existingGroupIds,
+    Map<String, Group> importedGroupsById,
+    List<Group> mergedGroups,
+  ) {
+    if (groupId == null || groupId.isEmpty) {
+      return null;
+    }
+
+    if (existingGroupIds.contains(groupId)) {
+      return groupId;
+    }
+
+    final importedGroup = importedGroupsById[groupId];
+    if (importedGroup == null) {
+      return null;
+    }
+
+    mergedGroups.add(importedGroup);
+    existingGroupIds.add(importedGroup.id);
+    return importedGroup.id;
+  }
+
+  List<OtpService> _reassignMergedOrder(
+    List<OtpService> allServices,
+    List<OtpService> addedServices,
+  ) {
+    final addedServiceIds = addedServices.map((service) => service.id).toSet();
+    final groupedServices = <String?, List<OtpService>>{};
+
+    for (final service in allServices) {
+      groupedServices.putIfAbsent(service.groupId, () => []).add(service);
+    }
+
+    final updatedOrderById = <String, int>{};
+
+    groupedServices.forEach((_, services) {
+      final existing = services
+          .where((service) => !addedServiceIds.contains(service.id))
+          .toList()
+        ..sort((a, b) => a.order.position.compareTo(b.order.position));
+      final added = services
+          .where((service) => addedServiceIds.contains(service.id))
+          .toList()
+        ..sort((a, b) => a.order.position.compareTo(b.order.position));
+
+      final orderedGroupServices = [...existing, ...added];
+      for (var i = 0; i < orderedGroupServices.length; i++) {
+        updatedOrderById[orderedGroupServices[i].id] = i;
+      }
+    });
+
+    return allServices
+        .map(
+          (service) => service.copyWith(
+            order: OrderInfo(
+              position: updatedOrderById[service.id] ?? service.order.position,
+            ),
+          ),
+        )
+        .toList();
   }
 
   Future<void> migratePlaintextDataToEncryptedVault(String password) async {
@@ -878,4 +1027,26 @@ class OtpState extends ChangeNotifier {
     _vaultSalt = null;
     _vaultIterations = null;
   }
+}
+
+class ImportBackupResult {
+  final List<OtpService> addedServices;
+  final List<OtpService> ignoredServices;
+
+  const ImportBackupResult({
+    required this.addedServices,
+    required this.ignoredServices,
+  });
+}
+
+class _MergedImportData {
+  final List<OtpService> services;
+  final List<Group> groups;
+  final ImportBackupResult result;
+
+  const _MergedImportData({
+    required this.services,
+    required this.groups,
+    required this.result,
+  });
 }

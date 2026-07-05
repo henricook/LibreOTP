@@ -17,18 +17,24 @@ import 'package:libreotp/services/local_vault_encryption_service.dart';
 class MockStorageRepository extends StorageRepository {
   List<Group> _groups = [];
   List<OtpService> _services = [];
+  List<Group> _importGroups = [];
+  List<OtpService> _importServices = [];
+  bool shouldThrowOnImport = false;
+  bool shouldThrowOnSave = false;
   Object? loadStoredDataException;
   Object? passwordLoadException;
   LoadedAppData? storedDataResult;
   LoadedAppData? passwordLoadResult;
   StorageDataSource? savedSource;
   String? encryptedSavePassword;
-  AppData? savedData;
   VaultKdfParameters kdfParameters = VaultKdfParameters(
     salt: Uint8List(32),
     iterations: 1000,
   );
   late File _testFile;
+  AppData? savedData;
+  int saveCallCount = 0;
+  int encryptedSaveCallCount = 0;
 
   MockStorageRepository() {
     final tempDir = Directory.systemTemp;
@@ -66,9 +72,40 @@ class MockStorageRepository extends StorageRepository {
     String? password,
     bool verify = false,
   }) async {
+    if (shouldThrowOnSave) {
+      throw const FileSystemException('Simulated save failure');
+    }
     savedData = data;
     savedSource = source;
     encryptedSavePassword = password;
+    saveCallCount++;
+  }
+
+  @override
+  Future<void> saveEncryptedDataWithKey(
+    AppData data,
+    Uint8List key, {
+    required Uint8List salt,
+    required int iterations,
+  }) async {
+    if (shouldThrowOnSave) {
+      throw const FileSystemException('Simulated save failure');
+    }
+    savedData = data;
+    savedSource = StorageDataSource.encryptedVault;
+    saveCallCount++;
+    encryptedSaveCallCount++;
+  }
+
+  @override
+  Future<void> deletePlaintextData() async {}
+
+  @override
+  Future<AppData> importBackupFile(String filePath, {String? password}) async {
+    if (shouldThrowOnImport) {
+      throw const FormatException('Selected file is not a valid 2FAS backup');
+    }
+    return AppData(groups: _importGroups, services: _importServices);
   }
 
   @override
@@ -96,6 +133,11 @@ class MockStorageRepository extends StorageRepository {
       data: AppData(groups: groups, services: services),
       source: StorageDataSource.plaintextJson,
     );
+  }
+
+  void setImportData(List<Group> groups, List<OtpService> services) {
+    _importGroups = groups;
+    _importServices = services;
   }
 }
 
@@ -213,6 +255,374 @@ void main() {
       test('should have getGroupNames method', () {
         expect(() => otpState.getGroupNames(), returnsNormally);
         expect(otpState.getGroupNames(), isA<Map<String, String>>());
+      });
+    });
+
+    group('Import merging', () {
+      test(
+        'should merge imported backup data by secret and append new order',
+        () async {
+          final existingGroup = Group(id: 'work', name: 'Work');
+          final importedGroup = Group(id: 'personal', name: 'Personal');
+
+          final existingService = OtpService(
+            id: 'existing-1',
+            name: 'GitHub',
+            secret: 'SECRET1',
+            otp: const OtpConfig(account: 'work@example.com', issuer: 'GitHub'),
+            order: const OrderInfo(position: 0),
+            groupId: 'work',
+          );
+          final duplicateImportedService = OtpService(
+            id: 'import-duplicate',
+            name: 'GitHub Duplicate',
+            secret: ' secret1 ',
+            otp: const OtpConfig(account: 'dup@example.com', issuer: 'GitHub'),
+            order: const OrderInfo(position: 0),
+            groupId: 'work',
+          );
+          final newImportedService = OtpService(
+            id: 'import-new',
+            name: 'Google',
+            secret: 'SECRET2',
+            otp: const OtpConfig(account: 'me@gmail.com', issuer: 'Google'),
+            order: const OrderInfo(position: 0),
+            groupId: 'personal',
+          );
+
+          mockRepository.setTestData([existingGroup], [existingService]);
+          mockRepository.setImportData(
+            [existingGroup, importedGroup],
+            [duplicateImportedService, newImportedService],
+          );
+          await otpState.initializeData();
+
+          final importResult = await otpState.importBackupFile('dummy.json');
+
+          expect(importResult, isNotNull);
+          expect(
+            importResult!.addedServices.map((service) => service.id),
+            equals(['import-new']),
+          );
+          expect(
+            importResult.ignoredServices.map((service) => service.id),
+            equals(['import-duplicate']),
+          );
+          expect(
+            otpState.services.map((service) => service.id),
+            unorderedEquals(['existing-1', 'import-new']),
+          );
+          expect(
+            otpState.groups.map((group) => group.id),
+            unorderedEquals(['work', 'personal']),
+          );
+
+          final groupedServices = otpState.groupedServices;
+          expect(groupedServices['work']!.first.order.position, equals(0));
+          expect(groupedServices['personal']!.first.order.position, equals(0));
+        },
+      );
+
+      test(
+        'should append every imported entry when none already exist',
+        () async {
+          final importedGroup = Group(id: 'personal', name: 'Personal');
+          final firstService = OtpService(
+            id: 'import-1',
+            name: 'Google',
+            secret: 'SECRET-A',
+            otp: const OtpConfig(account: 'me@gmail.com', issuer: 'Google'),
+            order: const OrderInfo(position: 0),
+            groupId: 'personal',
+          );
+          final secondService = OtpService(
+            id: 'import-2',
+            name: 'AWS',
+            secret: 'SECRET-B',
+            otp: const OtpConfig(account: 'me@aws.com', issuer: 'AWS'),
+            order: const OrderInfo(position: 1),
+            groupId: 'personal',
+          );
+
+          mockRepository.setTestData([], []);
+          mockRepository.setImportData(
+            [importedGroup],
+            [firstService, secondService],
+          );
+          await otpState.initializeData();
+
+          final importResult = await otpState.importBackupFile('dummy.json');
+
+          expect(importResult, isNotNull);
+          expect(
+            importResult!.addedServices.map((service) => service.id),
+            equals(['import-1', 'import-2']),
+          );
+          expect(importResult.ignoredServices, isEmpty);
+          expect(otpState.services.length, equals(2));
+          expect(
+            otpState.groups.map((group) => group.id),
+            equals(['personal']),
+          );
+        },
+      );
+
+      test(
+        'should persist the merged data after a successful import',
+        () async {
+          final existingService = OtpService(
+            id: 'existing-1',
+            name: 'GitHub',
+            secret: 'SECRET1',
+            otp: const OtpConfig(account: 'work@example.com', issuer: 'GitHub'),
+            order: const OrderInfo(position: 0),
+          );
+          final newImportedService = OtpService(
+            id: 'import-new',
+            name: 'Google',
+            secret: 'SECRET2',
+            otp: const OtpConfig(account: 'me@gmail.com', issuer: 'Google'),
+            order: const OrderInfo(position: 0),
+          );
+
+          mockRepository.setTestData([], [existingService]);
+          mockRepository.setImportData([], [newImportedService]);
+          await otpState.initializeData();
+
+          await otpState.importBackupFile('dummy.json');
+
+          expect(mockRepository.savedData, isNotNull);
+          expect(
+            mockRepository.savedData!.services.map((service) => service.id),
+            unorderedEquals(['existing-1', 'import-new']),
+          );
+        },
+      );
+
+      test(
+        'should ungroup imported services whose group cannot be resolved',
+        () async {
+          final importedService = OtpService(
+            id: 'import-dangling',
+            name: 'Dangling',
+            secret: 'SECRET-DANGLING',
+            otp: const OtpConfig(account: 'me@example.com', issuer: 'Dangling'),
+            order: const OrderInfo(position: 0),
+            groupId: 'ghost-group',
+          );
+
+          mockRepository.setTestData([], []);
+          mockRepository.setImportData([], [importedService]);
+          await otpState.initializeData();
+
+          final importResult = await otpState.importBackupFile('dummy.json');
+
+          expect(importResult, isNotNull);
+          expect(otpState.services.single.groupId, isNull);
+          expect(
+            otpState.groupedServices['Ungrouped']!.map((service) => service.id),
+            equals(['import-dangling']),
+          );
+        },
+      );
+
+      test(
+        'should remap imported ids that collide with existing services',
+        () async {
+          final existingService = OtpService(
+            id: 'shared-id',
+            name: 'Existing',
+            secret: 'SECRET-EXISTING',
+            otp: const OtpConfig(account: 'a@example.com', issuer: 'Existing'),
+            order: const OrderInfo(position: 0),
+          );
+          final collidingImport = OtpService(
+            id: 'shared-id',
+            name: 'Imported',
+            secret: 'SECRET-IMPORTED',
+            otp: const OtpConfig(account: 'b@example.com', issuer: 'Imported'),
+            order: const OrderInfo(position: 0),
+          );
+
+          mockRepository.setTestData([], [existingService]);
+          mockRepository.setImportData([], [collidingImport]);
+          await otpState.initializeData();
+
+          final importResult = await otpState.importBackupFile('dummy.json');
+
+          expect(importResult, isNotNull);
+          expect(
+            importResult!.addedServices.single.id,
+            equals('shared-id-imported'),
+          );
+          expect(
+            otpState.services.map((service) => service.id),
+            unorderedEquals(['shared-id', 'shared-id-imported']),
+          );
+        },
+      );
+
+      test(
+        'should leave state untouched when persisting the merge fails',
+        () async {
+          final existingService = OtpService(
+            id: 'existing-1',
+            name: 'GitHub',
+            secret: 'SECRET1',
+            otp: const OtpConfig(account: 'work@example.com', issuer: 'GitHub'),
+            order: const OrderInfo(position: 0),
+          );
+          final newImportedService = OtpService(
+            id: 'import-new',
+            name: 'Google',
+            secret: 'SECRET2',
+            otp: const OtpConfig(account: 'me@gmail.com', issuer: 'Google'),
+            order: const OrderInfo(position: 0),
+          );
+
+          mockRepository.setTestData([], [existingService]);
+          mockRepository.setImportData([], [newImportedService]);
+          await otpState.initializeData();
+          mockRepository.shouldThrowOnSave = true;
+
+          final importResult = await otpState.importBackupFile('dummy.json');
+
+          expect(importResult, isNull);
+          expect(
+            otpState.services.map((service) => service.id),
+            equals(['existing-1']),
+          );
+          expect(otpState.encryptionError, contains('Failed to import backup'));
+        },
+      );
+
+      test(
+        'should return null and preserve existing data when import fails',
+        () async {
+          final existingService = OtpService(
+            id: 'existing-1',
+            name: 'GitHub',
+            secret: 'SECRET1',
+            otp: const OtpConfig(account: 'work@example.com', issuer: 'GitHub'),
+            order: const OrderInfo(position: 0),
+          );
+
+          mockRepository.setTestData([], [existingService]);
+          await otpState.initializeData();
+          mockRepository.shouldThrowOnImport = true;
+
+          final importResult = await otpState.importBackupFile(
+            'malformed.json',
+          );
+
+          expect(importResult, isNull);
+          expect(
+            otpState.services.map((service) => service.id),
+            equals(['existing-1']),
+          );
+          expect(otpState.encryptionError, contains('Failed to import backup'));
+        },
+      );
+
+      testWidgets('cancels a pending debounced save when importing', (
+        WidgetTester tester,
+      ) async {
+        final existingService = OtpService(
+          id: 'existing-1',
+          name: 'GitHub',
+          secret: 'SECRET1',
+          otp: const OtpConfig(account: 'work@example.com', issuer: 'GitHub'),
+          order: const OrderInfo(position: 0),
+        );
+        final newImportedService = OtpService(
+          id: 'import-new',
+          name: 'Google',
+          secret: 'SECRET2',
+          otp: const OtpConfig(account: 'me@gmail.com', issuer: 'Google'),
+          order: const OrderInfo(position: 0),
+        );
+
+        // setUp already initialised otpState against empty data; reset the
+        // mock to the fixture and re-init on the real clock.
+        mockRepository.setTestData([], [existingService]);
+        mockRepository.setImportData([], [newImportedService]);
+        await tester.pumpWidget(MaterialApp(home: Scaffold(body: Container())));
+
+        // runAsync escapes the fake-async zone so the real 2s debounce timer
+        // and the periodic OTP timer behave normally.
+        await tester.runAsync(() async {
+          await otpState.initializeData();
+          final context = tester.element(find.byType(Container));
+          // Schedules the 2s debounced usage save.
+          otpState.generateOtp('Ungrouped', 0, context);
+
+          final importResult = await otpState.importBackupFile('dummy.json');
+
+          expect(importResult, isNotNull);
+          expect(mockRepository.saveCallCount, equals(1));
+
+          // The pre-import debounced save must have been cancelled, so no
+          // second write with stale data may fire once the 2s window passes.
+          await Future.delayed(const Duration(milliseconds: 2200));
+          expect(mockRepository.saveCallCount, equals(1));
+          expect(
+            mockRepository.savedData!.services.map((service) => service.id),
+            unorderedEquals(['existing-1', 'import-new']),
+          );
+        });
+
+        disposeState();
+      });
+
+      testWidgets(
+          'persists an import through the vault when encryption is '
+          'active', (WidgetTester tester) async {
+        final existingService = OtpService(
+          id: 'existing-1',
+          name: 'GitHub',
+          secret: 'SECRET1',
+          otp: const OtpConfig(account: 'work@example.com', issuer: 'GitHub'),
+          order: const OrderInfo(position: 0),
+        );
+        final newImportedService = OtpService(
+          id: 'import-new',
+          name: 'Google',
+          secret: 'SECRET2',
+          otp: const OtpConfig(account: 'me@gmail.com', issuer: 'Google'),
+          order: const OrderInfo(position: 0),
+        );
+
+        mockRepository.setTestData([], [existingService]);
+        mockRepository.setImportData([], [newImportedService]);
+        await tester.pumpWidget(MaterialApp(home: Scaffold(body: Container())));
+
+        await tester.runAsync(() async {
+          await otpState.initializeData();
+          // Move into the encrypted vault so persistence must go through it.
+          await otpState.migratePlaintextDataToEncryptedVault('vault-pw');
+          expect(otpState.usesEncryptedLocalStorage, isTrue);
+
+          final encryptedSavesBefore = mockRepository.encryptedSaveCallCount;
+          final importResult = await otpState.importBackupFile('dummy.json');
+
+          expect(importResult, isNotNull);
+          // The merged import was written via the encrypted path, never a
+          // plaintext saveData.
+          expect(
+            mockRepository.encryptedSaveCallCount,
+            greaterThan(encryptedSavesBefore),
+          );
+          expect(
+            mockRepository.savedSource,
+            equals(StorageDataSource.encryptedVault),
+          );
+          expect(
+            mockRepository.savedData!.services.map((service) => service.id),
+            unorderedEquals(['existing-1', 'import-new']),
+          );
+        });
+
+        disposeState();
       });
     });
 

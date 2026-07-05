@@ -22,6 +22,115 @@ void main() {
       }
     });
 
+    group('importBackupFile', () {
+      late Directory tempDir;
+      late StorageRepository repository;
+
+      setUp(() {
+        repository = StorageRepository();
+        tempDir = Directory.systemTemp.createTempSync('libreotp_import_test');
+      });
+
+      tearDown(() {
+        if (tempDir.existsSync()) {
+          tempDir.deleteSync(recursive: true);
+        }
+      });
+
+      File writeBackup(String contents) {
+        final file = File('${tempDir.path}/backup.json');
+        file.writeAsStringSync(contents);
+        return file;
+      }
+
+      test('parses an unencrypted backup into services and groups', () async {
+        final file = writeBackup(
+          jsonEncode({
+            'services': [
+              {
+                'id': 'service-1',
+                'name': 'GitHub',
+                'secret': 'JBSWY3DPEHPK3PXP',
+                'otp': {'account': 'me@example.com', 'issuer': 'GitHub'},
+                'order': {'position': 0},
+                'groupId': 'work',
+              },
+            ],
+            'groups': [
+              {'id': 'work', 'name': 'Work'},
+            ],
+          }),
+        );
+
+        final data = await repository.importBackupFile(file.path);
+
+        expect(data.services, hasLength(1));
+        expect(data.services.first.name, equals('GitHub'));
+        expect(data.services.first.secret, equals('JBSWY3DPEHPK3PXP'));
+        expect(data.groups, hasLength(1));
+        expect(data.groups.first.id, equals('work'));
+      });
+
+      test('throws on malformed JSON', () async {
+        final file = writeBackup('{ this is not valid json ');
+
+        expect(
+          () => repository.importBackupFile(file.path),
+          throwsA(isA<FormatException>()),
+        );
+      });
+
+      test('throws when the file is not a valid 2FAS backup', () async {
+        final file = writeBackup(jsonEncode({'unrelated': 'data'}));
+
+        expect(
+          () => repository.importBackupFile(file.path),
+          throwsA(isA<ArgumentError>()),
+        );
+      });
+
+      test('throws when the source file does not exist', () async {
+        expect(
+          () => repository.importBackupFile('${tempDir.path}/missing.json'),
+          throwsA(isA<ArgumentError>()),
+        );
+      });
+
+      test('requires a password for an encrypted backup', () async {
+        final fixture = File('test/fixtures/test_encrypted_backup.2fas');
+
+        expect(
+          () => repository.importBackupFile(fixture.path),
+          throwsA(predicate((e) => e.toString().contains('Password required'))),
+        );
+      });
+
+      test('decrypts an encrypted backup with the correct password', () async {
+        final fixture = File('test/fixtures/test_encrypted_backup.2fas');
+
+        final data = await repository.importBackupFile(
+          fixture.path,
+          password: 'testPassword123',
+        );
+
+        expect(data.services, hasLength(2));
+        expect(data.services.first.name, equals('TestService1'));
+        expect(data.services.first.secret, equals('JBSWY3DPEHPK3PXP'));
+      });
+
+      test('rejects an encrypted backup with the wrong password', () async {
+        final fixture = File('test/fixtures/test_encrypted_backup.2fas');
+
+        expect(
+          () => repository.importBackupFile(
+            fixture.path,
+            password: 'wrong-password',
+          ),
+          throwsA(isA<ArgumentError>()),
+        );
+      });
+    });
+
     group('Data models validation', () {
       test('should create valid Group from JSON', () {
         final json = {'id': 'test-group-id', 'name': 'Test Group'};

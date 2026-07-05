@@ -411,10 +411,10 @@ class StorageRepository {
       }
 
       // Parse the backup data for merging into local storage
-      AppData testData = await _parseBackupData(jsonData, password);
+      final AppData parsedData = await _parseBackupData(jsonData, password);
 
       debugPrint('Successfully imported backup from: $filePath');
-      return testData;
+      return parsedData;
     } catch (e) {
       debugPrint('Error importing backup file: $e');
       rethrow;
