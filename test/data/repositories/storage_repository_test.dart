@@ -1,3 +1,6 @@
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:libreotp/data/models/group.dart';
 import 'package:libreotp/data/models/otp_service.dart';
@@ -8,6 +11,79 @@ void main() {
 
   group('StorageRepository', () {
     setUp(() {});
+
+    group('importBackupFile', () {
+      late Directory tempDir;
+      late StorageRepository repository;
+
+      setUp(() {
+        repository = StorageRepository();
+        tempDir = Directory.systemTemp.createTempSync('libreotp_import_test');
+      });
+
+      tearDown(() {
+        if (tempDir.existsSync()) {
+          tempDir.deleteSync(recursive: true);
+        }
+      });
+
+      File writeBackup(String contents) {
+        final file = File('${tempDir.path}/backup.json');
+        file.writeAsStringSync(contents);
+        return file;
+      }
+
+      test('parses an unencrypted backup into services and groups', () async {
+        final file = writeBackup(jsonEncode({
+          'services': [
+            {
+              'id': 'service-1',
+              'name': 'GitHub',
+              'secret': 'JBSWY3DPEHPK3PXP',
+              'otp': {'account': 'me@example.com', 'issuer': 'GitHub'},
+              'order': {'position': 0},
+              'groupId': 'work',
+            },
+          ],
+          'groups': [
+            {'id': 'work', 'name': 'Work'},
+          ],
+        }));
+
+        final data = await repository.importBackupFile(file.path);
+
+        expect(data.services, hasLength(1));
+        expect(data.services.first.name, equals('GitHub'));
+        expect(data.services.first.secret, equals('JBSWY3DPEHPK3PXP'));
+        expect(data.groups, hasLength(1));
+        expect(data.groups.first.id, equals('work'));
+      });
+
+      test('throws on malformed JSON', () async {
+        final file = writeBackup('{ this is not valid json ');
+
+        expect(
+          () => repository.importBackupFile(file.path),
+          throwsA(isA<FormatException>()),
+        );
+      });
+
+      test('throws when the file is not a valid 2FAS backup', () async {
+        final file = writeBackup(jsonEncode({'unrelated': 'data'}));
+
+        expect(
+          () => repository.importBackupFile(file.path),
+          throwsA(isA<ArgumentError>()),
+        );
+      });
+
+      test('throws when the source file does not exist', () async {
+        expect(
+          () => repository.importBackupFile('${tempDir.path}/missing.json'),
+          throwsA(isA<ArgumentError>()),
+        );
+      });
+    });
 
     group('Data models validation', () {
       test('should create valid Group from JSON', () {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../config/app_config.dart';
+import '../../data/models/otp_service.dart';
 import '../state/otp_state.dart';
 import '../widgets/search_bar.dart';
 import '../widgets/otp_table.dart';
@@ -88,16 +89,15 @@ class _DashboardPageState extends State<DashboardPage> {
 
   void _showImportDialog(BuildContext context) async {
     final otpState = Provider.of<OtpState>(context, listen: false);
-    final messenger = ScaffoldMessenger.of(context);
 
-    // Show confirmation dialog if there's existing data
+    // Explain merge behavior when there's existing data
     if (otpState.hasExistingData) {
       final confirm = await showDialog<bool>(
         context: context,
         builder: (context) => AlertDialog(
           title: const Text('Import New Backup'),
           content: const Text(
-              'This will replace your current data with the imported backup. Are you sure you want to continue?'),
+              'This will merge the imported backup with your current entries. Entries with the same secret will be ignored.'),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(context).pop(false),
@@ -115,16 +115,13 @@ class _DashboardPageState extends State<DashboardPage> {
     }
 
     // Open file picker
-    final success = await otpState.reimportData();
+    final importResult = await otpState.reimportData();
 
-    if (success && mounted) {
-      messenger.showSnackBar(
-        const SnackBar(
-          content: Text('Backup imported successfully!'),
-          backgroundColor: Colors.green,
-        ),
-      );
-    } else if (otpState.requiresPassword && mounted) {
+    if (!mounted) return;
+
+    if (importResult != null) {
+      _showImportSummaryDialog(importResult);
+    } else if (otpState.requiresPassword) {
       // Handle encrypted backup - use the already selected file
       _showPasswordDialogForSelectedFile();
     }
@@ -132,7 +129,6 @@ class _DashboardPageState extends State<DashboardPage> {
 
   void _showPasswordDialogForSelectedFile() async {
     final otpState = Provider.of<OtpState>(context, listen: false);
-    final messenger = ScaffoldMessenger.of(context);
 
     if (!mounted) return;
 
@@ -145,18 +141,81 @@ class _DashboardPageState extends State<DashboardPage> {
     );
 
     if (password != null && mounted) {
-      final success = await otpState.importSelectedFileWithPassword(password);
-      if (success && mounted) {
-        messenger.showSnackBar(
-          const SnackBar(
-            content: Text('Encrypted backup imported successfully!'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      } else if (otpState.encryptionError != null && mounted) {
+      final importResult =
+          await otpState.importSelectedFileWithPassword(password);
+      if (!mounted) return;
+
+      if (importResult != null) {
+        _showImportSummaryDialog(importResult);
+      } else if (otpState.encryptionError != null) {
         _showPasswordDialogForSelectedFile(); // Show dialog again with error for same file
       }
     }
+  }
+
+  Future<void> _showImportSummaryDialog(
+    ImportBackupResult importResult,
+  ) async {
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text(
+            'Import complete (${importResult.addedServices.length} added, ${importResult.ignoredServices.length} ignored)',
+          ),
+          content: SizedBox(
+            width: 520,
+            height: 420,
+            child: Scrollbar(
+              thumbVisibility: true,
+              child: SingleChildScrollView(
+                child: SelectableText(_buildImportSummary(importResult)),
+              ),
+            ),
+          ),
+          actions: [
+            ElevatedButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('OK'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  String _buildImportSummary(ImportBackupResult importResult) {
+    final buffer = StringBuffer()
+      ..writeln('Added entries (${importResult.addedServices.length})')
+      ..writeln();
+
+    if (importResult.addedServices.isEmpty) {
+      buffer.writeln('None');
+    } else {
+      for (final service in importResult.addedServices) {
+        buffer.writeln(_formatImportedService(service));
+      }
+    }
+
+    buffer
+      ..writeln()
+      ..writeln(
+          'Ignored entries already in LibreOTP (${importResult.ignoredServices.length})')
+      ..writeln();
+
+    if (importResult.ignoredServices.isEmpty) {
+      buffer.writeln('None');
+    } else {
+      for (final service in importResult.ignoredServices) {
+        buffer.writeln(_formatImportedService(service));
+      }
+    }
+
+    return buffer.toString().trimRight();
+  }
+
+  String _formatImportedService(OtpService service) {
+    return '${service.name} / ${service.otp.issuer} / ${service.otp.account}';
   }
 
   @override

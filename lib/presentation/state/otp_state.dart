@@ -541,8 +541,9 @@ class OtpState extends ChangeNotifier {
     }
   }
 
-  /// Imports a 2FAS backup file and replaces current data
-  Future<bool> importBackupFile(String filePath, {String? password}) async {
+  /// Imports a 2FAS backup file and merges it into the current data
+  Future<ImportBackupResult?> importBackupFile(String filePath,
+      {String? password}) async {
     _isLoading = true;
     _encryptionError = null;
     notifyListeners();
@@ -550,18 +551,20 @@ class OtpState extends ChangeNotifier {
     try {
       final data = await _storageRepository.importBackupFile(filePath,
           password: password);
-      _services = data.services;
-      _groups = data.groups;
+      final importResult = _mergeImportedData(data);
       _groupedServices = _groupServicesByGroup();
       _hasExistingData = true;
       _requiresPassword = false;
       _isLoading = false;
+      await _storageRepository.saveData(
+        AppData(services: _services, groups: _groups),
+      );
       notifyListeners();
 
       // Preload icons for imported services asynchronously
       _preloadIconsForServices();
 
-      return true;
+      return importResult;
     } catch (e) {
       if (e.toString().contains('Password required')) {
         _requiresPassword = true;
@@ -571,24 +574,134 @@ class OtpState extends ChangeNotifier {
       }
       _isLoading = false;
       notifyListeners();
-      return false;
+      return null;
     }
   }
 
   /// Reimports data by opening file picker and importing selected file
-  Future<bool> reimportData() async {
+  Future<ImportBackupResult?> reimportData() async {
     final filePath = await pickBackupFile();
     if (filePath != null) {
       _selectedFilePath = filePath;
       return await importBackupFile(filePath);
     }
-    return false;
+    return null;
   }
 
   /// Imports the currently selected file with a password (for encrypted backups)
-  Future<bool> importSelectedFileWithPassword(String password) async {
-    if (_selectedFilePath == null) return false;
+  Future<ImportBackupResult?> importSelectedFileWithPassword(
+      String password) async {
+    if (_selectedFilePath == null) return null;
     return await importBackupFile(_selectedFilePath!, password: password);
+  }
+
+  ImportBackupResult _mergeImportedData(AppData importedData) {
+    final existingSecrets =
+        _services.map((service) => _normalizeSecret(service.secret)).toSet();
+    final mergedGroups = List<Group>.from(_groups);
+    final existingGroupIds = mergedGroups.map((group) => group.id).toSet();
+    final importedGroupsById = {
+      for (final group in importedData.groups) group.id: group,
+    };
+
+    final addedServices = <OtpService>[];
+    final ignoredServices = <OtpService>[];
+
+    for (final service in importedData.services) {
+      final normalizedSecret = _normalizeSecret(service.secret);
+      if (!existingSecrets.add(normalizedSecret)) {
+        ignoredServices.add(service);
+        continue;
+      }
+
+      final resolvedGroupId = _resolveImportedGroupId(
+        service.groupId,
+        existingGroupIds,
+        importedGroupsById,
+        mergedGroups,
+      );
+
+      addedServices.add(
+        service.copyWith(groupId: resolvedGroupId),
+      );
+    }
+
+    _services =
+        _reassignMergedOrder([..._services, ...addedServices], addedServices);
+    _groups = mergedGroups;
+
+    return ImportBackupResult(
+      addedServices: addedServices,
+      ignoredServices: ignoredServices,
+    );
+  }
+
+  String _normalizeSecret(String secret) {
+    return secret.replaceAll(RegExp(r'\s+'), '').toUpperCase();
+  }
+
+  String? _resolveImportedGroupId(
+    String? groupId,
+    Set<String> existingGroupIds,
+    Map<String, Group> importedGroupsById,
+    List<Group> mergedGroups,
+  ) {
+    if (groupId == null || groupId.isEmpty) {
+      return null;
+    }
+
+    if (existingGroupIds.contains(groupId)) {
+      return groupId;
+    }
+
+    final importedGroup = importedGroupsById[groupId];
+    if (importedGroup == null) {
+      return null;
+    }
+
+    mergedGroups.add(importedGroup);
+    existingGroupIds.add(importedGroup.id);
+    return importedGroup.id;
+  }
+
+  List<OtpService> _reassignMergedOrder(
+    List<OtpService> allServices,
+    List<OtpService> addedServices,
+  ) {
+    final addedServiceIds = addedServices.map((service) => service.id).toSet();
+    final groupedServices = <String?, List<OtpService>>{};
+
+    for (final service in allServices) {
+      groupedServices.putIfAbsent(service.groupId, () => []).add(service);
+    }
+
+    final updatedOrderById = <String, int>{};
+
+    groupedServices.forEach((_, services) {
+      final existing = services
+          .where((service) => !addedServiceIds.contains(service.id))
+          .toList()
+        ..sort((a, b) => a.order.position.compareTo(b.order.position));
+      final added = services
+          .where((service) => addedServiceIds.contains(service.id))
+          .toList()
+        ..sort((a, b) => a.order.position.compareTo(b.order.position));
+
+      final orderedGroupServices = [...existing, ...added];
+      for (var i = 0; i < orderedGroupServices.length; i++) {
+        updatedOrderById[orderedGroupServices[i].id] = i;
+      }
+    });
+
+    return allServices
+        .map(
+          (service) => service.copyWith(
+            order: OrderInfo(
+                position:
+                    updatedOrderById[service.id] ?? service.order.position),
+          ),
+        )
+        .toList();
   }
 
   /// Preloads icons for the current services asynchronously
@@ -601,4 +714,14 @@ class OtpState extends ChangeNotifier {
     // Preload icons in the background (non-blocking)
     TwoFasIconService.preloadIconsForServices(serviceNames, issuers);
   }
+}
+
+class ImportBackupResult {
+  final List<OtpService> addedServices;
+  final List<OtpService> ignoredServices;
+
+  const ImportBackupResult({
+    required this.addedServices,
+    required this.ignoredServices,
+  });
 }
