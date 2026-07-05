@@ -18,6 +18,7 @@ class MockStorageRepository extends StorageRepository {
   List<OtpService> _importServices = [];
   bool shouldThrowException = false;
   bool shouldThrowOnImport = false;
+  bool shouldThrowOnSave = false;
   late File _testFile;
   AppData? savedData;
 
@@ -37,6 +38,9 @@ class MockStorageRepository extends StorageRepository {
 
   @override
   Future<void> saveData(AppData data) async {
+    if (shouldThrowOnSave) {
+      throw const FileSystemException('Simulated save failure');
+    }
     savedData = data;
   }
 
@@ -137,13 +141,16 @@ void main() {
         expect(displayState, equals(OtpDisplayState.empty));
       });
 
-      testWidgets('should handle generateOtp method calls',
-          (WidgetTester tester) async {
+      testWidgets('should handle generateOtp method calls', (
+        WidgetTester tester,
+      ) async {
         await tester.pumpWidget(MaterialApp(home: Scaffold(body: Container())));
         final context = tester.element(find.byType(Container));
 
-        expect(() => otpState.generateOtp('invalid-group', 0, context),
-            returnsNormally);
+        expect(
+          () => otpState.generateOtp('invalid-group', 0, context),
+          returnsNormally,
+        );
 
         disposeState();
       });
@@ -157,146 +164,270 @@ void main() {
     });
 
     group('Import merging', () {
-      test('should merge imported backup data by secret and append new order',
-          () async {
-        final existingGroup = Group(id: 'work', name: 'Work');
-        final importedGroup = Group(id: 'personal', name: 'Personal');
+      test(
+        'should merge imported backup data by secret and append new order',
+        () async {
+          final existingGroup = Group(id: 'work', name: 'Work');
+          final importedGroup = Group(id: 'personal', name: 'Personal');
 
-        final existingService = OtpService(
-          id: 'existing-1',
-          name: 'GitHub',
-          secret: 'SECRET1',
-          otp: const OtpConfig(account: 'work@example.com', issuer: 'GitHub'),
-          order: const OrderInfo(position: 0),
-          groupId: 'work',
-        );
-        final duplicateImportedService = OtpService(
-          id: 'import-duplicate',
-          name: 'GitHub Duplicate',
-          secret: ' secret1 ',
-          otp: const OtpConfig(account: 'dup@example.com', issuer: 'GitHub'),
-          order: const OrderInfo(position: 0),
-          groupId: 'work',
-        );
-        final newImportedService = OtpService(
-          id: 'import-new',
-          name: 'Google',
-          secret: 'SECRET2',
-          otp: const OtpConfig(account: 'me@gmail.com', issuer: 'Google'),
-          order: const OrderInfo(position: 0),
-          groupId: 'personal',
-        );
+          final existingService = OtpService(
+            id: 'existing-1',
+            name: 'GitHub',
+            secret: 'SECRET1',
+            otp: const OtpConfig(account: 'work@example.com', issuer: 'GitHub'),
+            order: const OrderInfo(position: 0),
+            groupId: 'work',
+          );
+          final duplicateImportedService = OtpService(
+            id: 'import-duplicate',
+            name: 'GitHub Duplicate',
+            secret: ' secret1 ',
+            otp: const OtpConfig(account: 'dup@example.com', issuer: 'GitHub'),
+            order: const OrderInfo(position: 0),
+            groupId: 'work',
+          );
+          final newImportedService = OtpService(
+            id: 'import-new',
+            name: 'Google',
+            secret: 'SECRET2',
+            otp: const OtpConfig(account: 'me@gmail.com', issuer: 'Google'),
+            order: const OrderInfo(position: 0),
+            groupId: 'personal',
+          );
 
-        mockRepository.setTestData([existingGroup], [existingService]);
-        mockRepository.setImportData(
-          [existingGroup, importedGroup],
-          [duplicateImportedService, newImportedService],
-        );
-        await otpState.initializeData();
+          mockRepository.setTestData([existingGroup], [existingService]);
+          mockRepository.setImportData(
+            [existingGroup, importedGroup],
+            [duplicateImportedService, newImportedService],
+          );
+          await otpState.initializeData();
 
-        final importResult = await otpState.importBackupFile('dummy.json');
+          final importResult = await otpState.importBackupFile('dummy.json');
 
-        expect(importResult, isNotNull);
-        expect(importResult!.addedServices.map((service) => service.id),
-            equals(['import-new']));
-        expect(importResult.ignoredServices.map((service) => service.id),
-            equals(['import-duplicate']));
-        expect(otpState.services.map((service) => service.id),
-            containsAll(['existing-1', 'import-new']));
-        expect(otpState.groups.map((group) => group.id),
-            containsAll(['work', 'personal']));
+          expect(importResult, isNotNull);
+          expect(
+            importResult!.addedServices.map((service) => service.id),
+            equals(['import-new']),
+          );
+          expect(
+            importResult.ignoredServices.map((service) => service.id),
+            equals(['import-duplicate']),
+          );
+          expect(
+            otpState.services.map((service) => service.id),
+            unorderedEquals(['existing-1', 'import-new']),
+          );
+          expect(
+            otpState.groups.map((group) => group.id),
+            unorderedEquals(['work', 'personal']),
+          );
 
-        final groupedServices = otpState.groupedServices;
-        expect(groupedServices['work']!.first.order.position, equals(0));
-        expect(groupedServices['personal']!.first.order.position, equals(0));
-      });
+          final groupedServices = otpState.groupedServices;
+          expect(groupedServices['work']!.first.order.position, equals(0));
+          expect(groupedServices['personal']!.first.order.position, equals(0));
+        },
+      );
 
-      test('should append every imported entry when none already exist',
-          () async {
-        final importedGroup = Group(id: 'personal', name: 'Personal');
-        final firstService = OtpService(
-          id: 'import-1',
-          name: 'Google',
-          secret: 'SECRET-A',
-          otp: const OtpConfig(account: 'me@gmail.com', issuer: 'Google'),
-          order: const OrderInfo(position: 0),
-          groupId: 'personal',
-        );
-        final secondService = OtpService(
-          id: 'import-2',
-          name: 'AWS',
-          secret: 'SECRET-B',
-          otp: const OtpConfig(account: 'me@aws.com', issuer: 'AWS'),
-          order: const OrderInfo(position: 1),
-          groupId: 'personal',
-        );
+      test(
+        'should append every imported entry when none already exist',
+        () async {
+          final importedGroup = Group(id: 'personal', name: 'Personal');
+          final firstService = OtpService(
+            id: 'import-1',
+            name: 'Google',
+            secret: 'SECRET-A',
+            otp: const OtpConfig(account: 'me@gmail.com', issuer: 'Google'),
+            order: const OrderInfo(position: 0),
+            groupId: 'personal',
+          );
+          final secondService = OtpService(
+            id: 'import-2',
+            name: 'AWS',
+            secret: 'SECRET-B',
+            otp: const OtpConfig(account: 'me@aws.com', issuer: 'AWS'),
+            order: const OrderInfo(position: 1),
+            groupId: 'personal',
+          );
 
-        mockRepository.setTestData([], []);
-        mockRepository.setImportData(
-          [importedGroup],
-          [firstService, secondService],
-        );
-        await otpState.initializeData();
+          mockRepository.setTestData([], []);
+          mockRepository.setImportData(
+            [importedGroup],
+            [firstService, secondService],
+          );
+          await otpState.initializeData();
 
-        final importResult = await otpState.importBackupFile('dummy.json');
+          final importResult = await otpState.importBackupFile('dummy.json');
 
-        expect(importResult, isNotNull);
-        expect(importResult!.addedServices.map((service) => service.id),
-            equals(['import-1', 'import-2']));
-        expect(importResult.ignoredServices, isEmpty);
-        expect(otpState.services.length, equals(2));
-        expect(otpState.groups.map((group) => group.id), equals(['personal']));
-      });
+          expect(importResult, isNotNull);
+          expect(
+            importResult!.addedServices.map((service) => service.id),
+            equals(['import-1', 'import-2']),
+          );
+          expect(importResult.ignoredServices, isEmpty);
+          expect(otpState.services.length, equals(2));
+          expect(
+            otpState.groups.map((group) => group.id),
+            equals(['personal']),
+          );
+        },
+      );
 
-      test('should persist the merged data after a successful import',
-          () async {
-        final existingService = OtpService(
-          id: 'existing-1',
-          name: 'GitHub',
-          secret: 'SECRET1',
-          otp: const OtpConfig(account: 'work@example.com', issuer: 'GitHub'),
-          order: const OrderInfo(position: 0),
-        );
-        final newImportedService = OtpService(
-          id: 'import-new',
-          name: 'Google',
-          secret: 'SECRET2',
-          otp: const OtpConfig(account: 'me@gmail.com', issuer: 'Google'),
-          order: const OrderInfo(position: 0),
-        );
+      test(
+        'should persist the merged data after a successful import',
+        () async {
+          final existingService = OtpService(
+            id: 'existing-1',
+            name: 'GitHub',
+            secret: 'SECRET1',
+            otp: const OtpConfig(account: 'work@example.com', issuer: 'GitHub'),
+            order: const OrderInfo(position: 0),
+          );
+          final newImportedService = OtpService(
+            id: 'import-new',
+            name: 'Google',
+            secret: 'SECRET2',
+            otp: const OtpConfig(account: 'me@gmail.com', issuer: 'Google'),
+            order: const OrderInfo(position: 0),
+          );
 
-        mockRepository.setTestData([], [existingService]);
-        mockRepository.setImportData([], [newImportedService]);
-        await otpState.initializeData();
+          mockRepository.setTestData([], [existingService]);
+          mockRepository.setImportData([], [newImportedService]);
+          await otpState.initializeData();
 
-        await otpState.importBackupFile('dummy.json');
+          await otpState.importBackupFile('dummy.json');
 
-        expect(mockRepository.savedData, isNotNull);
-        expect(mockRepository.savedData!.services.map((service) => service.id),
-            containsAll(['existing-1', 'import-new']));
-      });
+          expect(mockRepository.savedData, isNotNull);
+          expect(
+            mockRepository.savedData!.services.map((service) => service.id),
+            unorderedEquals(['existing-1', 'import-new']),
+          );
+        },
+      );
 
-      test('should return null and preserve existing data when import fails',
-          () async {
-        final existingService = OtpService(
-          id: 'existing-1',
-          name: 'GitHub',
-          secret: 'SECRET1',
-          otp: const OtpConfig(account: 'work@example.com', issuer: 'GitHub'),
-          order: const OrderInfo(position: 0),
-        );
+      test(
+        'should ungroup imported services whose group cannot be resolved',
+        () async {
+          final importedService = OtpService(
+            id: 'import-dangling',
+            name: 'Dangling',
+            secret: 'SECRET-DANGLING',
+            otp: const OtpConfig(account: 'me@example.com', issuer: 'Dangling'),
+            order: const OrderInfo(position: 0),
+            groupId: 'ghost-group',
+          );
 
-        mockRepository.setTestData([], [existingService]);
-        await otpState.initializeData();
-        mockRepository.shouldThrowOnImport = true;
+          mockRepository.setTestData([], []);
+          mockRepository.setImportData([], [importedService]);
+          await otpState.initializeData();
 
-        final importResult = await otpState.importBackupFile('malformed.json');
+          final importResult = await otpState.importBackupFile('dummy.json');
 
-        expect(importResult, isNull);
-        expect(otpState.services.map((service) => service.id),
-            equals(['existing-1']));
-        expect(otpState.encryptionError, contains('Failed to import backup'));
-      });
+          expect(importResult, isNotNull);
+          expect(otpState.services.single.groupId, isNull);
+          expect(
+            otpState.groupedServices['Ungrouped']!.map((service) => service.id),
+            equals(['import-dangling']),
+          );
+        },
+      );
+
+      test(
+        'should remap imported ids that collide with existing services',
+        () async {
+          final existingService = OtpService(
+            id: 'shared-id',
+            name: 'Existing',
+            secret: 'SECRET-EXISTING',
+            otp: const OtpConfig(account: 'a@example.com', issuer: 'Existing'),
+            order: const OrderInfo(position: 0),
+          );
+          final collidingImport = OtpService(
+            id: 'shared-id',
+            name: 'Imported',
+            secret: 'SECRET-IMPORTED',
+            otp: const OtpConfig(account: 'b@example.com', issuer: 'Imported'),
+            order: const OrderInfo(position: 0),
+          );
+
+          mockRepository.setTestData([], [existingService]);
+          mockRepository.setImportData([], [collidingImport]);
+          await otpState.initializeData();
+
+          final importResult = await otpState.importBackupFile('dummy.json');
+
+          expect(importResult, isNotNull);
+          expect(
+            importResult!.addedServices.single.id,
+            equals('shared-id-imported'),
+          );
+          expect(
+            otpState.services.map((service) => service.id),
+            unorderedEquals(['shared-id', 'shared-id-imported']),
+          );
+        },
+      );
+
+      test(
+        'should leave state untouched when persisting the merge fails',
+        () async {
+          final existingService = OtpService(
+            id: 'existing-1',
+            name: 'GitHub',
+            secret: 'SECRET1',
+            otp: const OtpConfig(account: 'work@example.com', issuer: 'GitHub'),
+            order: const OrderInfo(position: 0),
+          );
+          final newImportedService = OtpService(
+            id: 'import-new',
+            name: 'Google',
+            secret: 'SECRET2',
+            otp: const OtpConfig(account: 'me@gmail.com', issuer: 'Google'),
+            order: const OrderInfo(position: 0),
+          );
+
+          mockRepository.setTestData([], [existingService]);
+          mockRepository.setImportData([], [newImportedService]);
+          await otpState.initializeData();
+          mockRepository.shouldThrowOnSave = true;
+
+          final importResult = await otpState.importBackupFile('dummy.json');
+
+          expect(importResult, isNull);
+          expect(
+            otpState.services.map((service) => service.id),
+            equals(['existing-1']),
+          );
+          expect(otpState.encryptionError, contains('Failed to import backup'));
+        },
+      );
+
+      test(
+        'should return null and preserve existing data when import fails',
+        () async {
+          final existingService = OtpService(
+            id: 'existing-1',
+            name: 'GitHub',
+            secret: 'SECRET1',
+            otp: const OtpConfig(account: 'work@example.com', issuer: 'GitHub'),
+            order: const OrderInfo(position: 0),
+          );
+
+          mockRepository.setTestData([], [existingService]);
+          await otpState.initializeData();
+          mockRepository.shouldThrowOnImport = true;
+
+          final importResult = await otpState.importBackupFile(
+            'malformed.json',
+          );
+
+          expect(importResult, isNull);
+          expect(
+            otpState.services.map((service) => service.id),
+            equals(['existing-1']),
+          );
+          expect(otpState.encryptionError, contains('Failed to import backup'));
+        },
+      );
     });
 
     group('State notifications', () {
@@ -324,10 +455,7 @@ void main() {
       });
 
       test('should organize services by groups in grouped mode', () async {
-        final testGroup = Group(
-          id: 'test-group',
-          name: 'Test Group',
-        );
+        final testGroup = Group(id: 'test-group', name: 'Test Group');
         final testService = OtpService(
           id: 'service-1',
           name: 'Test Service',
@@ -347,40 +475,43 @@ void main() {
         expect(grouped['test-group'], contains(testService));
       });
 
-      test('should show all services in "Most Used" group for usage-based mode',
-          () async {
-        final testService1 = OtpService(
-          id: 'service-1',
-          name: 'Service 1',
-          secret: 'JBSWY3DPEHPK3PXP',
-          otp: const OtpConfig(account: 'test1@example.com', issuer: 'Test'),
-          order: const OrderInfo(position: 0),
-          usageCount: 5,
-        );
-        final testService2 = OtpService(
-          id: 'service-2',
-          name: 'Service 2',
-          secret: 'JBSWY3DPEHPK3PXP',
-          otp: const OtpConfig(account: 'test2@example.com', issuer: 'Test'),
-          order: const OrderInfo(position: 1),
-          usageCount: 3,
-        );
+      test(
+        'should show all services in "Most Used" group for usage-based mode',
+        () async {
+          final testService1 = OtpService(
+            id: 'service-1',
+            name: 'Service 1',
+            secret: 'JBSWY3DPEHPK3PXP',
+            otp: const OtpConfig(account: 'test1@example.com', issuer: 'Test'),
+            order: const OrderInfo(position: 0),
+            usageCount: 5,
+          );
+          final testService2 = OtpService(
+            id: 'service-2',
+            name: 'Service 2',
+            secret: 'JBSWY3DPEHPK3PXP',
+            otp: const OtpConfig(account: 'test2@example.com', issuer: 'Test'),
+            order: const OrderInfo(position: 1),
+            usageCount: 3,
+          );
 
-        mockRepository.setTestData([], [testService1, testService2]);
-        await otpState.initializeData();
+          mockRepository.setTestData([], [testService1, testService2]);
+          await otpState.initializeData();
 
-        otpState.setDisplayMode(DisplayMode.usageBased);
-        final grouped = otpState.groupedServices;
+          otpState.setDisplayMode(DisplayMode.usageBased);
+          final grouped = otpState.groupedServices;
 
-        expect(grouped.keys.length, equals(1));
-        expect(grouped.containsKey('Most Used'), isTrue);
-        expect(grouped['Most Used']?.length, equals(2));
-      });
+          expect(grouped.keys.length, equals(1));
+          expect(grouped.containsKey('Most Used'), isTrue);
+          expect(grouped['Most Used']?.length, equals(2));
+        },
+      );
     });
 
     group('Usage Tracking', () {
-      testWidgets('should increment usage count when generating OTP',
-          (WidgetTester tester) async {
+      testWidgets('should increment usage count when generating OTP', (
+        WidgetTester tester,
+      ) async {
         final testService = OtpService(
           id: 'service-1',
           name: 'Test Service',
@@ -409,8 +540,9 @@ void main() {
         disposeState();
       });
 
-      testWidgets('should update lastUsedAt timestamp when generating OTP',
-          (WidgetTester tester) async {
+      testWidgets('should update lastUsedAt timestamp when generating OTP', (
+        WidgetTester tester,
+      ) async {
         final testService = OtpService(
           id: 'service-1',
           name: 'Test Service',
@@ -439,59 +571,67 @@ void main() {
         final updatedService = otpState.services.first;
         expect(updatedService.lastUsedAt, isNotNull);
         expect(
-            updatedService.lastUsedAt!
-                .isAfter(beforeTime.subtract(const Duration(seconds: 1))),
-            isTrue);
+          updatedService.lastUsedAt!.isAfter(
+            beforeTime.subtract(const Duration(seconds: 1)),
+          ),
+          isTrue,
+        );
         expect(
-            updatedService.lastUsedAt!
-                .isBefore(afterTime.add(const Duration(seconds: 1))),
-            isTrue);
+          updatedService.lastUsedAt!.isBefore(
+            afterTime.add(const Duration(seconds: 1)),
+          ),
+          isTrue,
+        );
 
         disposeState();
       });
 
       testWidgets(
-          'should not increment count on repeated clicks with same code',
-          (WidgetTester tester) async {
-        final testService = OtpService(
-          id: 'service-1',
-          name: 'Test Service',
-          secret: 'JBSWY3DPEHPK3PXP',
-          otp: const OtpConfig(account: 'test@example.com', issuer: 'Test'),
-          order: const OrderInfo(position: 0),
-          usageCount: 0,
-        );
+        'should not increment count on repeated clicks with same code',
+        (WidgetTester tester) async {
+          final testService = OtpService(
+            id: 'service-1',
+            name: 'Test Service',
+            secret: 'JBSWY3DPEHPK3PXP',
+            otp: const OtpConfig(account: 'test@example.com', issuer: 'Test'),
+            order: const OrderInfo(position: 0),
+            usageCount: 0,
+          );
 
-        await tester.runAsync(() async {
-          mockRepository.setTestData([], [testService]);
-          await otpState.initializeData();
-        });
+          await tester.runAsync(() async {
+            mockRepository.setTestData([], [testService]);
+            await otpState.initializeData();
+          });
 
-        await tester.pumpWidget(MaterialApp(home: Scaffold(body: Container())));
-        final context = tester.element(find.byType(Container));
+          await tester.pumpWidget(
+            MaterialApp(home: Scaffold(body: Container())),
+          );
+          final context = tester.element(find.byType(Container));
 
-        otpState.setDisplayMode(DisplayMode.usageBased);
+          otpState.setDisplayMode(DisplayMode.usageBased);
 
-        // First click increments
-        otpState.generateOtp('Most Used', 0, context);
-        await tester.pump();
-        expect(otpState.services.first.usageCount, equals(1));
+          // First click increments
+          otpState.generateOtp('Most Used', 0, context);
+          await tester.pump();
+          expect(otpState.services.first.usageCount, equals(1));
 
-        // Same code - should NOT increment
-        otpState.generateOtp('Most Used', 0, context);
-        await tester.pump();
-        expect(otpState.services.first.usageCount, equals(1));
+          // Same code - should NOT increment
+          otpState.generateOtp('Most Used', 0, context);
+          await tester.pump();
+          expect(otpState.services.first.usageCount, equals(1));
 
-        // Same code again - still should NOT increment
-        otpState.generateOtp('Most Used', 0, context);
-        await tester.pump();
-        expect(otpState.services.first.usageCount, equals(1));
+          // Same code again - still should NOT increment
+          otpState.generateOtp('Most Used', 0, context);
+          await tester.pump();
+          expect(otpState.services.first.usageCount, equals(1));
 
-        disposeState();
-      });
+          disposeState();
+        },
+      );
 
-      testWidgets('should increment count when code changes between clicks',
-          (WidgetTester tester) async {
+      testWidgets('should increment count when code changes between clicks', (
+        WidgetTester tester,
+      ) async {
         final testService = OtpService(
           id: 'service-1',
           name: 'Test Service',
@@ -572,97 +712,102 @@ void main() {
         expect(sortedServices[2].id, equals('service-1')); // 2 uses
       });
 
-      test('should use timestamp as tie-breaker for equal usage counts',
-          () async {
-        final now = DateTime.now().toUtc();
-        final service1 = OtpService(
-          id: 'service-1',
-          name: 'Older',
-          secret: 'JBSWY3DPEHPK3PXP',
-          otp: const OtpConfig(account: 'test1@example.com', issuer: 'Test'),
-          order: const OrderInfo(position: 0),
-          usageCount: 5,
-          lastUsedAt: now.subtract(const Duration(hours: 2)),
-        );
-        final service2 = OtpService(
-          id: 'service-2',
-          name: 'Newer',
-          secret: 'JBSWY3DPEHPK3PXP',
-          otp: const OtpConfig(account: 'test2@example.com', issuer: 'Test'),
-          order: const OrderInfo(position: 1),
-          usageCount: 5,
-          lastUsedAt: now.subtract(const Duration(minutes: 30)),
-        );
-        final service3 = OtpService(
-          id: 'service-3',
-          name: 'Newest',
-          secret: 'JBSWY3DPEHPK3PXP',
-          otp: const OtpConfig(account: 'test3@example.com', issuer: 'Test'),
-          order: const OrderInfo(position: 2),
-          usageCount: 5,
-          lastUsedAt: now.subtract(const Duration(minutes: 5)),
-        );
+      test(
+        'should use timestamp as tie-breaker for equal usage counts',
+        () async {
+          final now = DateTime.now().toUtc();
+          final service1 = OtpService(
+            id: 'service-1',
+            name: 'Older',
+            secret: 'JBSWY3DPEHPK3PXP',
+            otp: const OtpConfig(account: 'test1@example.com', issuer: 'Test'),
+            order: const OrderInfo(position: 0),
+            usageCount: 5,
+            lastUsedAt: now.subtract(const Duration(hours: 2)),
+          );
+          final service2 = OtpService(
+            id: 'service-2',
+            name: 'Newer',
+            secret: 'JBSWY3DPEHPK3PXP',
+            otp: const OtpConfig(account: 'test2@example.com', issuer: 'Test'),
+            order: const OrderInfo(position: 1),
+            usageCount: 5,
+            lastUsedAt: now.subtract(const Duration(minutes: 30)),
+          );
+          final service3 = OtpService(
+            id: 'service-3',
+            name: 'Newest',
+            secret: 'JBSWY3DPEHPK3PXP',
+            otp: const OtpConfig(account: 'test3@example.com', issuer: 'Test'),
+            order: const OrderInfo(position: 2),
+            usageCount: 5,
+            lastUsedAt: now.subtract(const Duration(minutes: 5)),
+          );
 
-        mockRepository.setTestData([], [service1, service2, service3]);
-        await otpState.initializeData();
+          mockRepository.setTestData([], [service1, service2, service3]);
+          await otpState.initializeData();
 
-        otpState.setDisplayMode(DisplayMode.usageBased);
-        final grouped = otpState.groupedServices;
-        final sortedServices = grouped['Most Used']!;
+          otpState.setDisplayMode(DisplayMode.usageBased);
+          final grouped = otpState.groupedServices;
+          final sortedServices = grouped['Most Used']!;
 
-        expect(sortedServices[0].id, equals('service-3')); // Most recent
-        expect(sortedServices[1].id, equals('service-2')); // Middle
-        expect(sortedServices[2].id, equals('service-1')); // Oldest
-      });
+          expect(sortedServices[0].id, equals('service-3')); // Most recent
+          expect(sortedServices[1].id, equals('service-2')); // Middle
+          expect(sortedServices[2].id, equals('service-1')); // Oldest
+        },
+      );
 
-      test('should place never-used items (null lastUsedAt) at bottom',
-          () async {
-        final now = DateTime.now().toUtc();
-        final service1 = OtpService(
-          id: 'service-1',
-          name: 'Never Used 1',
-          secret: 'JBSWY3DPEHPK3PXP',
-          otp: const OtpConfig(account: 'test1@example.com', issuer: 'Test'),
-          order: const OrderInfo(position: 0),
-          usageCount: 0,
-          lastUsedAt: null,
-        );
-        final service2 = OtpService(
-          id: 'service-2',
-          name: 'Used Once',
-          secret: 'JBSWY3DPEHPK3PXP',
-          otp: const OtpConfig(account: 'test2@example.com', issuer: 'Test'),
-          order: const OrderInfo(position: 1),
-          usageCount: 1,
-          lastUsedAt: now,
-        );
-        final service3 = OtpService(
-          id: 'service-3',
-          name: 'Never Used 2',
-          secret: 'JBSWY3DPEHPK3PXP',
-          otp: const OtpConfig(account: 'test3@example.com', issuer: 'Test'),
-          order: const OrderInfo(position: 2),
-          usageCount: 0,
-          lastUsedAt: null,
-        );
+      test(
+        'should place never-used items (null lastUsedAt) at bottom',
+        () async {
+          final now = DateTime.now().toUtc();
+          final service1 = OtpService(
+            id: 'service-1',
+            name: 'Never Used 1',
+            secret: 'JBSWY3DPEHPK3PXP',
+            otp: const OtpConfig(account: 'test1@example.com', issuer: 'Test'),
+            order: const OrderInfo(position: 0),
+            usageCount: 0,
+            lastUsedAt: null,
+          );
+          final service2 = OtpService(
+            id: 'service-2',
+            name: 'Used Once',
+            secret: 'JBSWY3DPEHPK3PXP',
+            otp: const OtpConfig(account: 'test2@example.com', issuer: 'Test'),
+            order: const OrderInfo(position: 1),
+            usageCount: 1,
+            lastUsedAt: now,
+          );
+          final service3 = OtpService(
+            id: 'service-3',
+            name: 'Never Used 2',
+            secret: 'JBSWY3DPEHPK3PXP',
+            otp: const OtpConfig(account: 'test3@example.com', issuer: 'Test'),
+            order: const OrderInfo(position: 2),
+            usageCount: 0,
+            lastUsedAt: null,
+          );
 
-        mockRepository.setTestData([], [service1, service2, service3]);
-        await otpState.initializeData();
+          mockRepository.setTestData([], [service1, service2, service3]);
+          await otpState.initializeData();
 
-        otpState.setDisplayMode(DisplayMode.usageBased);
-        final grouped = otpState.groupedServices;
-        final sortedServices = grouped['Most Used']!;
+          otpState.setDisplayMode(DisplayMode.usageBased);
+          final grouped = otpState.groupedServices;
+          final sortedServices = grouped['Most Used']!;
 
-        expect(sortedServices[0].id, equals('service-2')); // Used once
-        // Never-used items go to bottom (order among them is stable)
-        expect(sortedServices[1].lastUsedAt, isNull);
-        expect(sortedServices[2].lastUsedAt, isNull);
-      });
+          expect(sortedServices[0].id, equals('service-2')); // Used once
+          // Never-used items go to bottom (order among them is stable)
+          expect(sortedServices[1].lastUsedAt, isNull);
+          expect(sortedServices[2].lastUsedAt, isNull);
+        },
+      );
     });
 
     group('Cache Behavior', () {
-      testWidgets('should prevent immediate re-sort after clicking item',
-          (WidgetTester tester) async {
+      testWidgets('should prevent immediate re-sort after clicking item', (
+        WidgetTester tester,
+      ) async {
         final service1 = OtpService(
           id: 'service-1',
           name: 'Low Usage',
@@ -703,14 +848,17 @@ void main() {
         final afterClick = otpState.groupedServices['Most Used']!;
         expect(afterClick[0].id, equals('service-2')); // Still first
         expect(afterClick[1].id, equals('service-1')); // Still second
-        expect(afterClick[1].usageCount,
-            equals(3)); // Count updated (first click = new code)
+        expect(
+          afterClick[1].usageCount,
+          equals(3),
+        ); // Count updated (first click = new code)
 
         disposeState();
       });
 
-      testWidgets('should re-sort after 60 seconds',
-          (WidgetTester tester) async {
+      testWidgets('should re-sort after 60 seconds', (
+        WidgetTester tester,
+      ) async {
         final service1 = OtpService(
           id: 'service-1',
           name: 'Initially Low',
@@ -750,8 +898,10 @@ void main() {
         var services = otpState.groupedServices['Most Used']!;
         expect(services[0].id, equals('service-2'));
         expect(services[1].id, equals('service-1'));
-        expect(services[1].usageCount,
-            equals(6)); // 2 + 4 clicks (each with different code)
+        expect(
+          services[1].usageCount,
+          equals(6),
+        ); // 2 + 4 clicks (each with different code)
 
         // Advance time by 60 seconds to trigger resort
         await tester.pump(const Duration(seconds: 60));
@@ -804,95 +954,104 @@ void main() {
         final _ = otpState.groupedServices;
 
         // Change mode should clear cache
-        expect(() => otpState.setDisplayMode(DisplayMode.grouped),
-            returnsNormally);
+        expect(
+          () => otpState.setDisplayMode(DisplayMode.grouped),
+          returnsNormally,
+        );
         expect(() => otpState.groupedServices, returnsNormally);
       });
     });
 
     group('Integration Tests', () {
       testWidgets(
-          'full usage-based flow: click, stay in place, resort after 60s',
-          (WidgetTester tester) async {
-        final service1 = OtpService(
-          id: 'service-1',
-          name: 'GitHub',
-          secret: 'JBSWY3DPEHPK3PXP',
-          otp: const OtpConfig(account: 'user@example.com', issuer: 'GitHub'),
-          order: const OrderInfo(position: 0),
-          usageCount: 1,
-        );
-        final service2 = OtpService(
-          id: 'service-2',
-          name: 'Google',
-          secret: 'JBSWY3DPEHPK3PXP',
-          otp: const OtpConfig(account: 'user@example.com', issuer: 'Google'),
-          order: const OrderInfo(position: 1),
-          usageCount: 5,
-        );
-        final service3 = OtpService(
-          id: 'service-3',
-          name: 'AWS',
-          secret: 'JBSWY3DPEHPK3PXP',
-          otp: const OtpConfig(account: 'user@example.com', issuer: 'AWS'),
-          order: const OrderInfo(position: 2),
-          usageCount: 3,
-        );
+        'full usage-based flow: click, stay in place, resort after 60s',
+        (WidgetTester tester) async {
+          final service1 = OtpService(
+            id: 'service-1',
+            name: 'GitHub',
+            secret: 'JBSWY3DPEHPK3PXP',
+            otp: const OtpConfig(account: 'user@example.com', issuer: 'GitHub'),
+            order: const OrderInfo(position: 0),
+            usageCount: 1,
+          );
+          final service2 = OtpService(
+            id: 'service-2',
+            name: 'Google',
+            secret: 'JBSWY3DPEHPK3PXP',
+            otp: const OtpConfig(account: 'user@example.com', issuer: 'Google'),
+            order: const OrderInfo(position: 1),
+            usageCount: 5,
+          );
+          final service3 = OtpService(
+            id: 'service-3',
+            name: 'AWS',
+            secret: 'JBSWY3DPEHPK3PXP',
+            otp: const OtpConfig(account: 'user@example.com', issuer: 'AWS'),
+            order: const OrderInfo(position: 2),
+            usageCount: 3,
+          );
 
-        await tester.runAsync(() async {
-          mockRepository.setTestData([], [service1, service2, service3]);
-          await otpState.initializeData();
-        });
+          await tester.runAsync(() async {
+            mockRepository.setTestData([], [service1, service2, service3]);
+            await otpState.initializeData();
+          });
 
-        await tester.pumpWidget(MaterialApp(home: Scaffold(body: Container())));
-        final context = tester.element(find.byType(Container));
+          await tester.pumpWidget(
+            MaterialApp(home: Scaffold(body: Container())),
+          );
+          final context = tester.element(find.byType(Container));
 
-        // Switch to usage-based mode
-        otpState.setDisplayMode(DisplayMode.usageBased);
-        await tester.pump();
+          // Switch to usage-based mode
+          otpState.setDisplayMode(DisplayMode.usageBased);
+          await tester.pump();
 
-        // Initial order: Google (5), AWS (3), GitHub (1)
-        var services = otpState.groupedServices['Most Used']!;
-        expect(services[0].name, equals('Google'));
-        expect(services[1].name, equals('AWS'));
-        expect(services[2].name, equals('GitHub'));
+          // Initial order: Google (5), AWS (3), GitHub (1)
+          var services = otpState.groupedServices['Most Used']!;
+          expect(services[0].name, equals('Google'));
+          expect(services[1].name, equals('AWS'));
+          expect(services[2].name, equals('GitHub'));
 
-        // Click GitHub (at position 2) to increase its usage
-        mockGenerator.setNextCode('code-1');
-        otpState.generateOtp('Most Used', 2, context);
-        await tester.pump();
+          // Click GitHub (at position 2) to increase its usage
+          mockGenerator.setNextCode('code-1');
+          otpState.generateOtp('Most Used', 2, context);
+          await tester.pump();
 
-        // Should stay at position 2 (cache active)
-        services = otpState.groupedServices['Most Used']!;
-        expect(services[0].name, equals('Google'));
-        expect(services[1].name, equals('AWS'));
-        expect(services[2].name, equals('GitHub')); // Still here
-        expect(services[2].usageCount, equals(2)); // Count updated
+          // Should stay at position 2 (cache active)
+          services = otpState.groupedServices['Most Used']!;
+          expect(services[0].name, equals('Google'));
+          expect(services[1].name, equals('AWS'));
+          expect(services[2].name, equals('GitHub')); // Still here
+          expect(services[2].usageCount, equals(2)); // Count updated
 
-        // Click it again with a different code (new TOTP period)
-        mockGenerator.setNextCode('code-2');
-        otpState.generateOtp('Most Used', 2, context);
-        await tester.pump();
-        expect(otpState.groupedServices['Most Used']![2].usageCount,
-            equals(3)); // Now tied with AWS
+          // Click it again with a different code (new TOTP period)
+          mockGenerator.setNextCode('code-2');
+          otpState.generateOtp('Most Used', 2, context);
+          await tester.pump();
+          expect(
+            otpState.groupedServices['Most Used']![2].usageCount,
+            equals(3),
+          ); // Now tied with AWS
 
-        // Still at position 2 (cache still active)
-        services = otpState.groupedServices['Most Used']!;
-        expect(services[2].name, equals('GitHub'));
+          // Still at position 2 (cache still active)
+          services = otpState.groupedServices['Most Used']!;
+          expect(services[2].name, equals('GitHub'));
 
-        // Advance time by 60 seconds
-        await tester.pump(const Duration(seconds: 60));
+          // Advance time by 60 seconds
+          await tester.pump(const Duration(seconds: 60));
 
-        // Should now be re-sorted by count and timestamp
-        services = otpState.groupedServices['Most Used']!;
-        expect(services[0].name, equals('Google')); // Still highest (5)
-        // GitHub and AWS both have 3, but GitHub was used more recently
-        expect(
-            services[1].name, equals('GitHub')); // Moved up due to recent use
-        expect(services[2].name, equals('AWS'));
+          // Should now be re-sorted by count and timestamp
+          services = otpState.groupedServices['Most Used']!;
+          expect(services[0].name, equals('Google')); // Still highest (5)
+          // GitHub and AWS both have 3, but GitHub was used more recently
+          expect(
+            services[1].name,
+            equals('GitHub'),
+          ); // Moved up due to recent use
+          expect(services[2].name, equals('AWS'));
 
-        disposeState();
-      });
+          disposeState();
+        },
+      );
     });
   });
 }

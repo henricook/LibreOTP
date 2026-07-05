@@ -44,13 +44,16 @@ class OtpService {
       name: json['name']?.toString() ?? '',
       groupId: json['groupId']?.toString(),
       otp: OtpConfig.fromJson(
-          json['otp'] is Map<String, dynamic> ? json['otp'] : {}),
+        json['otp'] is Map<String, dynamic> ? json['otp'] : {},
+      ),
       order: OrderInfo.fromJson(
-          json['order'] is Map<String, dynamic> ? json['order'] : {}),
+        json['order'] is Map<String, dynamic> ? json['order'] : {},
+      ),
       secret: json['secret']?.toString() ?? '',
       icon: json.containsKey('icon')
           ? IconInfo.fromJson(
-              json['icon'] is Map<String, dynamic> ? json['icon'] : {})
+              json['icon'] is Map<String, dynamic> ? json['icon'] : {},
+            )
           : IconInfo.empty,
       usageCount: json['usageCount'] as int? ?? 0,
       lastUsedAt: lastUsedAt,
@@ -102,6 +105,22 @@ class OtpService {
       icon: icon ?? this.icon,
       usageCount: usageCount ?? this.usageCount,
       lastUsedAt: lastUsedAt ?? this.lastUsedAt,
+    );
+  }
+
+  /// Returns a copy with [groupId] set exactly as given, including null.
+  /// [copyWith] cannot clear the group because it null-coalesces.
+  OtpService withGroupId(String? groupId) {
+    return OtpService(
+      id: id,
+      name: name,
+      groupId: groupId,
+      otp: otp,
+      order: order,
+      secret: secret,
+      icon: icon,
+      usageCount: usageCount,
+      lastUsedAt: lastUsedAt,
     );
   }
 }
@@ -173,9 +192,7 @@ class OrderInfo {
     return OrderInfo(position: position);
   }
 
-  Map<String, dynamic> toJson() => {
-        'position': position,
-      };
+  Map<String, dynamic> toJson() => {'position': position};
 }
 
 class IconInfo {

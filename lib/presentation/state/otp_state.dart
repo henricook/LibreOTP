@@ -390,9 +390,7 @@ class OtpState extends ChangeNotifier {
       _usageBasedSortCache = sortedServices;
     }
 
-    return {
-      'Most Used': sortedServices,
-    };
+    return {'Most Used': sortedServices};
   }
 
   Map<String, List<OtpService>> _filterAndGroupData() {
@@ -408,10 +406,12 @@ class OtpState extends ChangeNotifier {
     Map<String, List<OtpService>> filteredData = {};
     baseGrouping.forEach((groupId, services) {
       final filteredServices = services
-          .where((service) =>
-              service.name.toLowerCase().contains(_searchQuery) ||
-              service.otp.account.toLowerCase().contains(_searchQuery) ||
-              service.otp.issuer.toLowerCase().contains(_searchQuery))
+          .where(
+            (service) =>
+                service.name.toLowerCase().contains(_searchQuery) ||
+                service.otp.account.toLowerCase().contains(_searchQuery) ||
+                service.otp.issuer.toLowerCase().contains(_searchQuery),
+          )
           .toList();
 
       if (filteredServices.isNotEmpty) {
@@ -452,8 +452,9 @@ class OtpState extends ChangeNotifier {
 
     // Only increment usage count when the code is different (new TOTP period)
     if (isNewCode) {
-      final serviceIndexInList =
-          _services.indexWhere((s) => s.id == service.id);
+      final serviceIndexInList = _services.indexWhere(
+        (s) => s.id == service.id,
+      );
       if (serviceIndexInList != -1) {
         _services[serviceIndexInList] = service.copyWith(
           usageCount: service.usageCount + 1,
@@ -482,7 +483,9 @@ class OtpState extends ChangeNotifier {
     // Copy to clipboard
     ClipboardUtils.copyToClipboard(newCode);
     ClipboardUtils.showCopiedNotification(
-        context, 'OTP Code Copied to Clipboard!');
+      context,
+      'OTP Code Copied to Clipboard!',
+    );
 
     _startOtpTimer(serviceKey, timerKey, timeRemaining);
 
@@ -542,29 +545,37 @@ class OtpState extends ChangeNotifier {
   }
 
   /// Imports a 2FAS backup file and merges it into the current data
-  Future<ImportBackupResult?> importBackupFile(String filePath,
-      {String? password}) async {
+  Future<ImportBackupResult?> importBackupFile(
+    String filePath, {
+    String? password,
+  }) async {
     _isLoading = true;
     _encryptionError = null;
     notifyListeners();
 
     try {
-      final data = await _storageRepository.importBackupFile(filePath,
-          password: password);
-      final importResult = _mergeImportedData(data);
+      final data = await _storageRepository.importBackupFile(
+        filePath,
+        password: password,
+      );
+      final merged = _mergeImportedData(data);
+      // Persist before touching state so a failed save leaves the current
+      // in-memory data untouched.
+      await _storageRepository.saveData(
+        AppData(services: merged.services, groups: merged.groups),
+      );
+      _services = merged.services;
+      _groups = merged.groups;
       _groupedServices = _groupServicesByGroup();
       _hasExistingData = true;
       _requiresPassword = false;
       _isLoading = false;
-      await _storageRepository.saveData(
-        AppData(services: _services, groups: _groups),
-      );
       notifyListeners();
 
       // Preload icons for imported services asynchronously
       _preloadIconsForServices();
 
-      return importResult;
+      return merged.result;
     } catch (e) {
       if (e.toString().contains('Password required')) {
         _requiresPassword = true;
@@ -590,14 +601,18 @@ class OtpState extends ChangeNotifier {
 
   /// Imports the currently selected file with a password (for encrypted backups)
   Future<ImportBackupResult?> importSelectedFileWithPassword(
-      String password) async {
+    String password,
+  ) async {
     if (_selectedFilePath == null) return null;
     return await importBackupFile(_selectedFilePath!, password: password);
   }
 
-  ImportBackupResult _mergeImportedData(AppData importedData) {
+  /// Computes the merge of [importedData] into the current data without
+  /// mutating state; the caller persists the result before committing it.
+  _MergedImportData _mergeImportedData(AppData importedData) {
     final existingSecrets =
         _services.map((service) => _normalizeSecret(service.secret)).toSet();
+    final existingIds = _services.map((service) => service.id).toSet();
     final mergedGroups = List<Group>.from(_groups);
     final existingGroupIds = mergedGroups.map((group) => group.id).toSet();
     final importedGroupsById = {
@@ -621,18 +636,33 @@ class OtpState extends ChangeNotifier {
         mergedGroups,
       );
 
-      addedServices.add(
-        service.copyWith(groupId: resolvedGroupId),
-      );
+      var mergedService = service.withGroupId(resolvedGroupId);
+      if (!existingIds.add(mergedService.id)) {
+        // A different service already uses this id; remap so ids stay unique.
+        var suffix = 1;
+        var candidate = '${mergedService.id}-imported';
+        while (!existingIds.add(candidate)) {
+          suffix++;
+          candidate = '${mergedService.id}-imported-$suffix';
+        }
+        mergedService = mergedService.copyWith(id: candidate);
+      }
+
+      addedServices.add(mergedService);
     }
 
-    _services =
-        _reassignMergedOrder([..._services, ...addedServices], addedServices);
-    _groups = mergedGroups;
+    final mergedServices = _reassignMergedOrder([
+      ..._services,
+      ...addedServices,
+    ], addedServices);
 
-    return ImportBackupResult(
-      addedServices: addedServices,
-      ignoredServices: ignoredServices,
+    return _MergedImportData(
+      services: mergedServices,
+      groups: mergedGroups,
+      result: ImportBackupResult(
+        addedServices: addedServices,
+        ignoredServices: ignoredServices,
+      ),
     );
   }
 
@@ -697,8 +727,8 @@ class OtpState extends ChangeNotifier {
         .map(
           (service) => service.copyWith(
             order: OrderInfo(
-                position:
-                    updatedOrderById[service.id] ?? service.order.position),
+              position: updatedOrderById[service.id] ?? service.order.position,
+            ),
           ),
         )
         .toList();
@@ -723,5 +753,17 @@ class ImportBackupResult {
   const ImportBackupResult({
     required this.addedServices,
     required this.ignoredServices,
+  });
+}
+
+class _MergedImportData {
+  final List<OtpService> services;
+  final List<Group> groups;
+  final ImportBackupResult result;
+
+  const _MergedImportData({
+    required this.services,
+    required this.groups,
+    required this.result,
   });
 }

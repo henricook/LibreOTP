@@ -34,21 +34,23 @@ void main() {
       }
 
       test('parses an unencrypted backup into services and groups', () async {
-        final file = writeBackup(jsonEncode({
-          'services': [
-            {
-              'id': 'service-1',
-              'name': 'GitHub',
-              'secret': 'JBSWY3DPEHPK3PXP',
-              'otp': {'account': 'me@example.com', 'issuer': 'GitHub'},
-              'order': {'position': 0},
-              'groupId': 'work',
-            },
-          ],
-          'groups': [
-            {'id': 'work', 'name': 'Work'},
-          ],
-        }));
+        final file = writeBackup(
+          jsonEncode({
+            'services': [
+              {
+                'id': 'service-1',
+                'name': 'GitHub',
+                'secret': 'JBSWY3DPEHPK3PXP',
+                'otp': {'account': 'me@example.com', 'issuer': 'GitHub'},
+                'order': {'position': 0},
+                'groupId': 'work',
+              },
+            ],
+            'groups': [
+              {'id': 'work', 'name': 'Work'},
+            ],
+          }),
+        );
 
         final data = await repository.importBackupFile(file.path);
 
@@ -83,14 +85,45 @@ void main() {
           throwsA(isA<ArgumentError>()),
         );
       });
+
+      test('requires a password for an encrypted backup', () async {
+        final fixture = File('test/fixtures/test_encrypted_backup.2fas');
+
+        expect(
+          () => repository.importBackupFile(fixture.path),
+          throwsA(predicate((e) => e.toString().contains('Password required'))),
+        );
+      });
+
+      test('decrypts an encrypted backup with the correct password', () async {
+        final fixture = File('test/fixtures/test_encrypted_backup.2fas');
+
+        final data = await repository.importBackupFile(
+          fixture.path,
+          password: 'testPassword123',
+        );
+
+        expect(data.services, hasLength(2));
+        expect(data.services.first.name, equals('TestService1'));
+        expect(data.services.first.secret, equals('JBSWY3DPEHPK3PXP'));
+      });
+
+      test('rejects an encrypted backup with the wrong password', () async {
+        final fixture = File('test/fixtures/test_encrypted_backup.2fas');
+
+        expect(
+          () => repository.importBackupFile(
+            fixture.path,
+            password: 'wrong-password',
+          ),
+          throwsA(isA<ArgumentError>()),
+        );
+      });
     });
 
     group('Data models validation', () {
       test('should create valid Group from JSON', () {
-        final json = {
-          'id': 'test-group-id',
-          'name': 'Test Group',
-        };
+        final json = {'id': 'test-group-id', 'name': 'Test Group'};
 
         final group = Group.fromJson(json);
 
@@ -110,9 +143,7 @@ void main() {
             'digits': 6,
             'period': 30,
           },
-          'order': {
-            'position': 0,
-          },
+          'order': {'position': 0},
           'groupId': 'test-group-id',
         };
 
@@ -135,10 +166,7 @@ void main() {
           'id': 'test-service-id',
           'name': 'Test Service',
           'secret': 'JBSWY3DPEHPK3PXP',
-          'otp': {
-            'account': 'test@example.com',
-            'issuer': 'Test Issuer',
-          },
+          'otp': {'account': 'test@example.com', 'issuer': 'Test Issuer'},
           'order': {},
           // No groupId
         };
@@ -264,10 +292,7 @@ void main() {
             id: 'service1',
             name: 'GitHub',
             secret: 'SECRET1',
-            otp: OtpConfig(
-              account: 'work@company.com',
-              issuer: 'GitHub',
-            ),
+            otp: OtpConfig(account: 'work@company.com', issuer: 'GitHub'),
             order: OrderInfo(position: 0),
             groupId: 'work',
           ),
@@ -275,10 +300,7 @@ void main() {
             id: 'service2',
             name: 'Google',
             secret: 'SECRET2',
-            otp: OtpConfig(
-              account: 'personal@gmail.com',
-              issuer: 'Google',
-            ),
+            otp: OtpConfig(account: 'personal@gmail.com', issuer: 'Google'),
             order: OrderInfo(position: 1),
             groupId: 'personal',
           ),
@@ -286,10 +308,7 @@ void main() {
             id: 'service3',
             name: 'GitLab',
             secret: 'SECRET3',
-            otp: OtpConfig(
-              account: 'work2@company.com',
-              issuer: 'GitLab',
-            ),
+            otp: OtpConfig(account: 'work2@company.com', issuer: 'GitLab'),
             order: OrderInfo(position: 2),
             groupId: 'work', // Same group as service1
           ),
@@ -315,10 +334,7 @@ void main() {
             id: 'service1',
             name: 'Ungrouped Service',
             secret: 'SECRET1',
-            otp: OtpConfig(
-              account: 'test@example.com',
-              issuer: 'Test',
-            ),
+            otp: OtpConfig(account: 'test@example.com', issuer: 'Test'),
             order: OrderInfo(position: 0),
             // No groupId
           ),
@@ -369,8 +385,9 @@ void main() {
         }
 
         // Sort by position
-        groupedServices['group1']!
-            .sort((a, b) => a.order.position.compareTo(b.order.position));
+        groupedServices['group1']!.sort(
+          (a, b) => a.order.position.compareTo(b.order.position),
+        );
 
         expect(groupedServices['group1']![0].name, equals('Service A'));
         expect(groupedServices['group1']![1].name, equals('Service B'));
