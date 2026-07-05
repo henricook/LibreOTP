@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
@@ -12,6 +13,7 @@ import 'package:libreotp/config/display_mode.dart';
 import 'package:libreotp/presentation/state/otp_display_state.dart';
 import 'package:libreotp/presentation/state/otp_state.dart';
 import 'package:libreotp/services/local_vault_encryption_service.dart';
+import 'package:libreotp/services/vault_keyring_service.dart';
 
 // Mock classes
 class MockStorageRepository extends StorageRepository {
@@ -21,6 +23,7 @@ class MockStorageRepository extends StorageRepository {
   List<OtpService> _importServices = [];
   bool shouldThrowOnImport = false;
   bool shouldThrowOnSave = false;
+  bool shouldThrowOnCreateVault = false;
   Object? loadStoredDataException;
   Object? passwordLoadException;
   LoadedAppData? storedDataResult;
@@ -35,6 +38,13 @@ class MockStorageRepository extends StorageRepository {
   AppData? savedData;
   int saveCallCount = 0;
   int encryptedSaveCallCount = 0;
+  int vaultSessionSaveCount = 0;
+  int createVaultCount = 0;
+  Completer<void>? sessionSaveGate;
+  VaultKeyringRecord? keyringRecord;
+  int keyringWriteCount = 0;
+  int keyringDeleteCount = 0;
+  bool shouldThrowOnKeyringWrite = false;
 
   MockStorageRepository() {
     final tempDir = Directory.systemTemp;
@@ -98,6 +108,64 @@ class MockStorageRepository extends StorageRepository {
   }
 
   @override
+  Future<void> saveEncryptedVaultSession(
+    AppData data,
+    VaultSessionKeys session, {
+    bool verify = false,
+  }) async {
+    if (sessionSaveGate != null) {
+      await sessionSaveGate!.future;
+    }
+    if (shouldThrowOnSave) {
+      throw const FileSystemException('Simulated save failure');
+    }
+    savedData = data;
+    savedSource = StorageDataSource.encryptedVault;
+    saveCallCount++;
+    encryptedSaveCallCount++;
+    vaultSessionSaveCount++;
+  }
+
+  @override
+  Future<VaultSessionKeys> createEncryptedVault(
+    AppData data,
+    String password, {
+    bool verify = false,
+  }) async {
+    createVaultCount++;
+    if (shouldThrowOnCreateVault) {
+      throw const FileSystemException('Simulated create vault failure');
+    }
+    if (shouldThrowOnSave) {
+      throw const FileSystemException('Simulated save failure');
+    }
+    savedData = data;
+    savedSource = StorageDataSource.encryptedVault;
+    encryptedSavePassword = password;
+    saveCallCount++;
+    encryptedSaveCallCount++;
+    return _fakeVaultSession();
+  }
+
+  @override
+  Future<VaultKeyringRecord?> readVaultKeyringEntry() async => keyringRecord;
+
+  @override
+  Future<void> writeVaultKeyringEntry(VaultKeyringRecord record) async {
+    if (shouldThrowOnKeyringWrite) {
+      throw StateError('Simulated keyring write failure');
+    }
+    keyringWriteCount++;
+    keyringRecord = record;
+  }
+
+  @override
+  Future<void> deleteVaultKeyringEntry() async {
+    keyringDeleteCount++;
+    keyringRecord = null;
+  }
+
+  @override
   Future<void> deletePlaintextData() async {}
 
   @override
@@ -109,7 +177,7 @@ class MockStorageRepository extends StorageRepository {
   }
 
   @override
-  Future<void> migratePlaintextDataToEncryptedVault(
+  Future<VaultSessionKeys> migratePlaintextDataToEncryptedVault(
     AppData data,
     String password,
   ) async {
@@ -118,7 +186,15 @@ class MockStorageRepository extends StorageRepository {
       source: StorageDataSource.encryptedVault,
       password: password,
     );
+    return _fakeVaultSession();
   }
+
+  VaultSessionKeys _fakeVaultSession() => VaultSessionKeys(
+        dek: Uint8List(32),
+        keySlots: const [
+          {'type': 'password'},
+        ],
+      );
 
   @override
   Future<File> getLocalFile() async => _testFile;
@@ -915,6 +991,177 @@ void main() {
           );
         },
       );
+
+      test('upgrades a v1 vault to v2 after a password unlock', () async {
+        final service = OtpService(
+          id: 'service-1',
+          name: 'Vault',
+          secret: 'SECRET',
+          otp: const OtpConfig(account: 'vault@example.com', issuer: 'Vault'),
+          order: const OrderInfo(position: 0),
+        );
+        mockRepository.loadStoredDataException =
+            const StoragePasswordRequiredException(
+          StorageDataSource.encryptedVault,
+          'Password required for encrypted vault',
+        );
+        mockRepository.passwordLoadResult = LoadedAppData(
+          data: AppData(groups: const [], services: [service]),
+          source: StorageDataSource.encryptedVault,
+          vaultNeedsUpgrade: true,
+        );
+
+        await otpState.initializeData();
+        await otpState.loadDataWithPassword('correct-password');
+
+        expect(mockRepository.createVaultCount, equals(1));
+        expect(otpState.usesEncryptedLocalStorage, isTrue);
+        expect(otpState.requiresPassword, isFalse);
+        expect(otpState.canConfigureAutoUnlock, isTrue);
+        expect(otpState.services.single.id, equals('service-1'));
+      });
+
+      test(
+        'keeps the v1 session when the v2 upgrade fails, without error',
+        () async {
+          final service = OtpService(
+            id: 'service-1',
+            name: 'Vault',
+            secret: 'SECRET',
+            otp: const OtpConfig(account: 'vault@example.com', issuer: 'Vault'),
+            order: const OrderInfo(position: 0),
+          );
+          mockRepository.loadStoredDataException =
+              const StoragePasswordRequiredException(
+            StorageDataSource.encryptedVault,
+            'Password required for encrypted vault',
+          );
+          mockRepository.passwordLoadResult = LoadedAppData(
+            data: AppData(groups: const [], services: [service]),
+            source: StorageDataSource.encryptedVault,
+            vaultNeedsUpgrade: true,
+          );
+          mockRepository.shouldThrowOnCreateVault = true;
+
+          await otpState.initializeData();
+          await otpState.loadDataWithPassword('correct-password');
+
+          expect(mockRepository.createVaultCount, equals(1));
+          expect(otpState.usesEncryptedLocalStorage, isTrue);
+          expect(otpState.requiresPassword, isFalse);
+          expect(otpState.encryptionError, isNull);
+          expect(otpState.canConfigureAutoUnlock, isFalse);
+          expect(otpState.services.single.id, equals('service-1'));
+        },
+      );
+
+      test('enableAutoUnlock rolls back the keyring key if the save fails',
+          () async {
+        final service = OtpService(
+          id: 'service-1',
+          name: 'Plaintext',
+          secret: 'SECRET',
+          otp: const OtpConfig(account: 'plain@example.com', issuer: 'Plain'),
+          order: const OrderInfo(position: 0),
+        );
+        mockRepository.setTestData(const [], [service]);
+        await otpState.initializeData();
+        await otpState.migratePlaintextDataToEncryptedVault('vault-password');
+
+        mockRepository.shouldThrowOnSave = true;
+
+        await expectLater(
+          otpState.enableAutoUnlock(),
+          throwsA(isA<FileSystemException>()),
+        );
+
+        expect(mockRepository.keyringWriteCount, equals(1));
+        expect(mockRepository.keyringDeleteCount, equals(1));
+        expect(mockRepository.keyringRecord, isNull);
+        expect(otpState.autoUnlockEnabled, isFalse);
+      });
+
+      test('auto-unlock toggles throw on plaintext storage', () async {
+        final service = OtpService(
+          id: 'service-1',
+          name: 'Plaintext',
+          secret: 'SECRET',
+          otp: const OtpConfig(account: 'plain@example.com', issuer: 'Plain'),
+          order: const OrderInfo(position: 0),
+        );
+        mockRepository.setTestData(const [], [service]);
+        await otpState.initializeData();
+
+        expect(otpState.usesEncryptedLocalStorage, isFalse);
+        expect(
+          () => otpState.enableAutoUnlock(),
+          throwsA(isA<StateError>()),
+        );
+        expect(
+          () => otpState.disableAutoUnlock(),
+          throwsA(isA<StateError>()),
+        );
+      });
+
+      test('disableAutoUnlock is a no-op when no keyring slot exists',
+          () async {
+        final service = OtpService(
+          id: 'service-1',
+          name: 'Plaintext',
+          secret: 'SECRET',
+          otp: const OtpConfig(account: 'plain@example.com', issuer: 'Plain'),
+          order: const OrderInfo(position: 0),
+        );
+        mockRepository.setTestData(const [], [service]);
+        await otpState.initializeData();
+        await otpState.migratePlaintextDataToEncryptedVault('vault-password');
+        expect(otpState.autoUnlockEnabled, isFalse);
+
+        final savesBefore = mockRepository.vaultSessionSaveCount;
+        await otpState.disableAutoUnlock();
+
+        expect(mockRepository.vaultSessionSaveCount, equals(savesBefore));
+        expect(mockRepository.keyringDeleteCount, equals(0));
+      });
+
+      test('a second vault operation is rejected while one is running',
+          () async {
+        final service = OtpService(
+          id: 'service-1',
+          name: 'Plaintext',
+          secret: 'SECRET',
+          otp: const OtpConfig(account: 'plain@example.com', issuer: 'Plain'),
+          order: const OrderInfo(position: 0),
+        );
+        mockRepository.setTestData(const [], [service]);
+        await otpState.initializeData();
+        await otpState.migratePlaintextDataToEncryptedVault('vault-password');
+        await otpState.enableAutoUnlock();
+        expect(otpState.autoUnlockEnabled, isTrue);
+
+        final savesBefore = mockRepository.vaultSessionSaveCount;
+        final gate = Completer<void>();
+        mockRepository.sessionSaveGate = gate;
+
+        // Hold a password change open at its gated save, then attempt a
+        // concurrent disable. Both would swap the same data.bin temp file.
+        final changeFuture = otpState.changeLocalVaultPassword('new-password');
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+
+        await expectLater(
+          otpState.disableAutoUnlock(),
+          throwsA(isA<StateError>()),
+        );
+
+        gate.complete();
+        await changeFuture;
+
+        expect(
+          mockRepository.vaultSessionSaveCount,
+          equals(savesBefore + 1),
+        );
+        expect(otpState.autoUnlockEnabled, isTrue);
+      });
     });
 
     group('Display Mode', () {

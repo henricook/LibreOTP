@@ -108,7 +108,8 @@ class _DashboardPageState extends State<DashboardPage> {
       builder: (context) => AlertDialog(
         title: const Text('Encrypt Local Data'),
         content: const Text(
-          'LibreOTP loaded plaintext local data from data.json. You can migrate it into an encrypted local vault and remove the plaintext file.',
+          'LibreOTP loaded plaintext local data from data.json. You can migrate it into an encrypted local vault and remove the plaintext file.\n\n'
+          'Encryption will be the default in future. Once encrypted, there is no way to switch back to plaintext storage.',
         ),
         actions: [
           TextButton(
@@ -159,6 +160,7 @@ class _DashboardPageState extends State<DashboardPage> {
           duration: Duration(seconds: 3),
         ),
       );
+      await _offerAutoUnlock(otpState);
     } catch (e) {
       if (!mounted) {
         return;
@@ -234,6 +236,105 @@ class _DashboardPageState extends State<DashboardPage> {
       case _StorageAction.changeVaultPassword:
         await _showChangeVaultPasswordDialog();
         break;
+      case _StorageAction.toggleAutoUnlock:
+        await _handleToggleAutoUnlock();
+        break;
+    }
+  }
+
+  Future<void> _handleToggleAutoUnlock() async {
+    final otpState = Provider.of<OtpState>(context, listen: false);
+    if (otpState.autoUnlockEnabled) {
+      await _disableAutoUnlock(otpState);
+    } else {
+      await _offerAutoUnlock(otpState);
+    }
+  }
+
+  /// Shows the trade-off dialog and, if accepted, enables auto-unlock. Used both
+  /// from the storage menu and once after a successful vault migration.
+  Future<void> _offerAutoUnlock(OtpState otpState) async {
+    if (!otpState.canConfigureAutoUnlock || otpState.autoUnlockEnabled) {
+      return;
+    }
+
+    final enable = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Unlock Automatically'),
+        content: const Text(
+          'LibreOTP will store a key in the system keyring (GNOME Keyring on '
+          'Linux, Keychain on macOS, Credential Manager on Windows) so your '
+          'vault opens without a password whenever you are logged in to this '
+          'device.\n\n'
+          'Anyone with access to your unlocked session could use that key to '
+          'open the vault. The vault file itself stays encrypted at rest.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Enable'),
+          ),
+        ],
+      ),
+    );
+
+    if (enable != true || !mounted) {
+      return;
+    }
+
+    try {
+      await otpState.enableAutoUnlock();
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Automatic unlock enabled on this device'),
+          duration: Duration(seconds: 3),
+        ),
+      );
+    } catch (e) {
+      debugPrint('Could not enable automatic unlock: $e');
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not enable automatic unlock: $e'),
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    }
+  }
+
+  Future<void> _disableAutoUnlock(OtpState otpState) async {
+    try {
+      await otpState.disableAutoUnlock();
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Automatic unlock disabled'),
+          duration: Duration(seconds: 3),
+        ),
+      );
+    } catch (e) {
+      debugPrint('Could not disable automatic unlock: $e');
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not disable automatic unlock: $e'),
+          duration: const Duration(seconds: 4),
+        ),
+      );
     }
   }
 
@@ -528,6 +629,17 @@ class _DashboardPageState extends State<DashboardPage> {
                             Text('Change Vault Password'),
                           ],
                         ),
+                      ),
+                    );
+                  }
+                  if (otpState.canConfigureAutoUnlock ||
+                      otpState.autoUnlockEnabled) {
+                    items.add(
+                      CheckedPopupMenuItem(
+                        value: _StorageAction.toggleAutoUnlock,
+                        checked: otpState.autoUnlockEnabled,
+                        child:
+                            const Text('Unlock automatically on this device'),
                       ),
                     );
                   }
@@ -833,7 +945,11 @@ class _DashboardPageState extends State<DashboardPage> {
   }
 }
 
-enum _StorageAction { encryptLocalData, changeVaultPassword }
+enum _StorageAction {
+  encryptLocalData,
+  changeVaultPassword,
+  toggleAutoUnlock,
+}
 
 class _BusyOverlay extends StatelessWidget {
   const _BusyOverlay();

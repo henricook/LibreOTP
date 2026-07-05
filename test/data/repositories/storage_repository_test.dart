@@ -1,10 +1,39 @@
 import 'dart:convert';
 import 'dart:io';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:libreotp/data/models/group.dart';
 import 'package:libreotp/data/models/otp_service.dart';
 import 'package:libreotp/data/repositories/storage_repository.dart';
 import 'package:libreotp/services/local_vault_encryption_service.dart';
+import 'package:libreotp/services/vault_keyring_service.dart';
+
+class FakeVaultKeyringService extends VaultKeyringService {
+  VaultKeyringRecord? record;
+  bool throwOnRead = false;
+  int writeCount = 0;
+  int deleteCount = 0;
+
+  @override
+  Future<VaultKeyringRecord?> read() async {
+    if (throwOnRead) {
+      throw PlatformException(code: 'keyring_locked');
+    }
+    return record;
+  }
+
+  @override
+  Future<void> write(VaultKeyringRecord newRecord) async {
+    writeCount++;
+    record = newRecord;
+  }
+
+  @override
+  Future<void> delete() async {
+    deleteCount++;
+    record = null;
+  }
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -855,6 +884,186 @@ void main() {
           expect(await tempFile.exists(), isFalse);
         },
       );
+    });
+
+    group('Vault auto-unlock', () {
+      final data = AppData(
+        services: const [
+          OtpService(
+            id: 'vault-service',
+            name: 'Vault',
+            secret: 'VAULTSECRET',
+            otp: OtpConfig(account: 'vault@example.com', issuer: 'Vault'),
+            order: OrderInfo(position: 0),
+          ),
+        ],
+        groups: const [],
+      );
+
+      Future<Uint8List> buildKeyringVaultBytes(
+        StorageRepository repository,
+        String kekId,
+        Uint8List kek,
+      ) async {
+        final plaintextJson = repository.serializePlaintextAppData(data);
+        final built = await LocalVaultEncryptionService.createEncryptedVault(
+          plaintextJson,
+          'vault-password',
+          iterations: 1000,
+        );
+        final session =
+            await LocalVaultEncryptionService.addKeyringSlotToSession(
+          built.session,
+          kekId,
+          kek,
+        );
+        return LocalVaultEncryptionService.buildEnvelopeFromSession(
+          plaintextJson,
+          session,
+        );
+      }
+
+      Future<void> writeVaultFile(
+        StorageRepository repository,
+        Uint8List bytes,
+      ) async {
+        final encryptedFile = await repository.getEncryptedLocalFile();
+        await encryptedFile.writeAsBytes(bytes, flush: true);
+      }
+
+      test('passwordless load succeeds with a matching keyring slot', () async {
+        final keyring = FakeVaultKeyringService();
+        final repository = StorageRepository(
+          localPathOverride: tempDir.path,
+          keyringService: keyring,
+        );
+        final kek = LocalVaultEncryptionService.generateKeyEncryptionKey();
+        const kekId = 'kek-match';
+        await writeVaultFile(
+          repository,
+          await buildKeyringVaultBytes(repository, kekId, kek),
+        );
+        keyring.record = VaultKeyringRecord(id: kekId, kek: kek);
+
+        final loaded = await repository.loadStoredData();
+
+        expect(loaded.source, equals(StorageDataSource.encryptedVault));
+        expect(loaded.vaultSessionKeys, isNotNull);
+        expect(loaded.vaultSessionKeys!.hasKeyringSlot, isTrue);
+        expect(loaded.vaultNeedsUpgrade, isFalse);
+        expect(loaded.data.toJson(), equals(data.toJson()));
+      });
+
+      test('a missing keyring entry requires a password', () async {
+        final keyring = FakeVaultKeyringService();
+        final repository = StorageRepository(
+          localPathOverride: tempDir.path,
+          keyringService: keyring,
+        );
+        final kek = LocalVaultEncryptionService.generateKeyEncryptionKey();
+        await writeVaultFile(
+          repository,
+          await buildKeyringVaultBytes(repository, 'kek-real', kek),
+        );
+        // Vault has a keyring slot, but the keyring itself holds no entry.
+        expect(keyring.record, isNull);
+
+        expect(
+          () => repository.loadStoredData(),
+          throwsA(isA<StoragePasswordRequiredException>()),
+        );
+      });
+
+      test('kekId mismatch requires a password', () async {
+        final keyring = FakeVaultKeyringService();
+        final repository = StorageRepository(
+          localPathOverride: tempDir.path,
+          keyringService: keyring,
+        );
+        final kek = LocalVaultEncryptionService.generateKeyEncryptionKey();
+        await writeVaultFile(
+          repository,
+          await buildKeyringVaultBytes(repository, 'kek-real', kek),
+        );
+        keyring.record = VaultKeyringRecord(id: 'kek-other', kek: kek);
+
+        expect(
+          () => repository.loadStoredData(),
+          throwsA(isA<StoragePasswordRequiredException>()),
+        );
+      });
+
+      test('a keyring PlatformException falls back to password', () async {
+        final keyring = FakeVaultKeyringService()..throwOnRead = true;
+        final repository = StorageRepository(
+          localPathOverride: tempDir.path,
+          keyringService: keyring,
+        );
+        final kek = LocalVaultEncryptionService.generateKeyEncryptionKey();
+        await writeVaultFile(
+          repository,
+          await buildKeyringVaultBytes(repository, 'kek-real', kek),
+        );
+
+        expect(
+          () => repository.loadStoredData(),
+          throwsA(isA<StoragePasswordRequiredException>()),
+        );
+      });
+
+      test('a v2 vault with no keyring slot requires a password', () async {
+        final keyring = FakeVaultKeyringService();
+        final repository = StorageRepository(
+          localPathOverride: tempDir.path,
+          keyringService: keyring,
+        );
+        await repository.createEncryptedVault(data, 'vault-password');
+
+        expect(
+          () => repository.loadStoredData(),
+          throwsA(isA<StoragePasswordRequiredException>()),
+        );
+      });
+
+      test('createEncryptedVault load returns v2 session, no upgrade',
+          () async {
+        final repository = StorageRepository(
+          localPathOverride: tempDir.path,
+          keyringService: FakeVaultKeyringService(),
+        );
+        await repository.createEncryptedVault(data, 'vault-password');
+
+        final loaded = await repository.loadStoredData(
+          password: 'vault-password',
+        );
+
+        expect(loaded.source, equals(StorageDataSource.encryptedVault));
+        expect(loaded.vaultSessionKeys, isNotNull);
+        expect(loaded.vaultNeedsUpgrade, isFalse);
+      });
+
+      test('a v1 vault load flags an upgrade to v2', () async {
+        final repository = StorageRepository(
+          localPathOverride: tempDir.path,
+          keyringService: FakeVaultKeyringService(),
+        );
+        final plaintextJson = repository.serializePlaintextAppData(data);
+        final v1Bytes = await LocalVaultEncryptionService.encrypt(
+          plaintextJson,
+          'vault-password',
+          iterations: 1000,
+        );
+        await writeVaultFile(repository, v1Bytes);
+
+        final loaded = await repository.loadStoredData(
+          password: 'vault-password',
+        );
+
+        expect(loaded.source, equals(StorageDataSource.encryptedVault));
+        expect(loaded.vaultNeedsUpgrade, isTrue);
+        expect(loaded.vaultSessionKeys, isNull);
+        expect(loaded.data.toJson(), equals(data.toJson()));
+      });
     });
 
     group('Data organization helpers', () {

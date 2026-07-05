@@ -24,9 +24,10 @@ The app follows a layered architecture with Provider for state management:
 - **`lib/data/repositories/storage_repository.dart`** - File I/O layer. Reads/writes plaintext `data.json` and the optional encrypted `data.bin` vault (preferred over `data.json` when both exist; saved atomically via temp+backup rename with crash recovery), handles file picker for import, delegates decryption to `TwoFasDecryptionService`/`LocalVaultEncryptionService`. Contains `AppData` wrapper class.
 - **`lib/domain/services/otp_service.dart`** - TOTP code generation using the `otp` package.
 - **`lib/services/twofas_decryption_service.dart`** - Decrypts 2FAS encrypted exports (PBKDF2 key derivation + AES-GCM). Includes password verification via reference field.
-- **`lib/services/local_vault_encryption_service.dart`** - Encrypts/decrypts the local `data.bin` vault (PBKDF2-HMAC-SHA256 at 600k iterations + AES-256-GCM with AAD-bound header; KDF runs in an isolate).
+- **`lib/services/local_vault_encryption_service.dart`** - Encrypts/decrypts the local `data.bin` vault. v2 uses a key-slot envelope: a random data key encrypts the payload (AES-256-GCM, AAD-bound header) and is wrapped by one or more slots (password slot via PBKDF2-HMAC-SHA256 at 600k iterations, optional keyring slot). v1 files still decrypt and are upgraded to v2 on unlock. All crypto runs in an isolate.
 - **`lib/services/crypto_primitives.dart`** - Thin pointycastle wrappers (PBKDF2, AES-GCM) shared by the vault and 2FAS decryption services.
 - **`lib/services/secure_storage_service.dart`** - Stores/retrieves 2FAS backup passwords via `flutter_secure_storage` (the local vault password is never persisted).
+- **`lib/services/vault_keyring_service.dart`** - Stores the vault auto-unlock KEK in the system keyring via `flutter_secure_storage` (read-back verified); a v2 keyring slot wraps the vault data key with it so the vault can open without a password on a trusted device.
 - **`lib/services/twofas_icon_service.dart`** - Fetches service icons from 2FAS icon repository.
 - **`lib/presentation/state/otp_state.dart`** - Central `ChangeNotifier`. Manages services list, groups, search, display modes (grouped vs usage-based), OTP generation with countdown timers, and debounced persistence. This is the core business logic orchestrator.
 - **`lib/presentation/state/otp_display_state.dart`** - Immutable state for a single OTP display (code + validity countdown).
@@ -35,7 +36,7 @@ The app follows a layered architecture with Provider for state management:
 - **`lib/utils/`** - Clipboard and JSON utilities.
 
 ### Key data flow
-1. `StorageRepository` loads from the platform-specific app support directory: encrypted `data.bin` vault first (prompting for its password), otherwise plaintext `data.json`
+1. `StorageRepository` loads from the platform-specific app support directory: encrypted `data.bin` vault first, otherwise plaintext `data.json`. For a v2 vault with a keyring slot it first tries a silent auto-unlock via `VaultKeyringService` (the system keyring), and only prompts for the password if that fails
 2. Encrypted 2FAS backups inside `data.json` are decrypted by `TwoFasDecryptionService` using a stored or user-provided password; the `data.bin` vault is decrypted by `LocalVaultEncryptionService`
 3. `OtpState` holds parsed services/groups, groups them, handles search filtering
 4. On OTP generation: code is generated, copied to clipboard, countdown timer starts, usage stats are updated and debounce-saved (re-encrypted with the cached session key when the vault is active)
