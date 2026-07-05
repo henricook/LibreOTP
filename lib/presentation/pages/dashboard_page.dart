@@ -298,13 +298,14 @@ class _DashboardPageState extends State<DashboardPage> {
         ),
       );
     } catch (e) {
+      debugPrint('Could not enable automatic unlock: $e');
       if (!mounted) {
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Could not enable automatic unlock'),
-          duration: Duration(seconds: 4),
+        SnackBar(
+          content: Text('Could not enable automatic unlock: $e'),
+          duration: const Duration(seconds: 4),
         ),
       );
     }
@@ -323,13 +324,14 @@ class _DashboardPageState extends State<DashboardPage> {
         ),
       );
     } catch (e) {
+      debugPrint('Could not disable automatic unlock: $e');
       if (!mounted) {
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Could not disable automatic unlock'),
-          duration: Duration(seconds: 4),
+        SnackBar(
+          content: Text('Could not disable automatic unlock: $e'),
+          duration: const Duration(seconds: 4),
         ),
       );
     }

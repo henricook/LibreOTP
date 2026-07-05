@@ -926,7 +926,17 @@ class OtpState extends ChangeNotifier {
         .toList();
   }
 
+  /// Vault write paths all swap the same data.bin/.tmp/.bak files, so only one
+  /// may run at a time. The busy overlay does not cover the storage menu, so
+  /// this guard is what actually prevents two writers interleaving.
+  void _ensureNoVaultOperationInProgress() {
+    if (_busyOperation != null) {
+      throw StateError('A vault operation is already in progress');
+    }
+  }
+
   Future<void> migratePlaintextDataToEncryptedVault(String password) async {
+    _ensureNoVaultOperationInProgress();
     _debouncedSaveTimer?.cancel();
     await _runBusyOperation(BusyOperation.encryptingLocalData, () async {
       final data = AppData(services: _services, groups: _groups);
@@ -936,7 +946,7 @@ class OtpState extends ChangeNotifier {
         password,
       );
       _activeStorageSource = StorageDataSource.encryptedVault;
-      _localVaultPassword = password;
+      _localVaultPassword = null;
       _vaultSession = session;
       _clearVaultSessionKey();
       _shouldPromptForEncryptionMigration = false;
@@ -949,6 +959,7 @@ class OtpState extends ChangeNotifier {
     if (!usesEncryptedLocalStorage) {
       throw StateError('Encrypted local storage is not active');
     }
+    _ensureNoVaultOperationInProgress();
 
     _debouncedSaveTimer?.cancel();
     await _runBusyOperation(BusyOperation.changingVaultPassword, () async {
@@ -977,7 +988,7 @@ class OtpState extends ChangeNotifier {
         _vaultSession = newSession;
         _clearVaultSessionKey();
       }
-      _localVaultPassword = password;
+      _localVaultPassword = null;
       notifyListeners();
     });
   }
@@ -993,14 +1004,20 @@ class OtpState extends ChangeNotifier {
     if (!usesEncryptedLocalStorage || session == null) {
       throw StateError('Encrypted local vault session is not active');
     }
+    _ensureNoVaultOperationInProgress();
 
     _debouncedSaveTimer?.cancel();
     await _runBusyOperation(BusyOperation.updatingAutoUnlock, () async {
       final kek = LocalVaultEncryptionService.generateKeyEncryptionKey();
       final kekId = const Uuid().v4();
-      await _storageRepository.writeVaultKeyringEntry(
-        VaultKeyringRecord(id: kekId, kek: kek),
-      );
+      try {
+        await _storageRepository.writeVaultKeyringEntry(
+          VaultKeyringRecord(id: kekId, kek: kek),
+        );
+      } catch (e) {
+        debugPrint('Could not enable automatic unlock: $e');
+        rethrow;
+      }
 
       try {
         final newSession =
@@ -1017,6 +1034,7 @@ class OtpState extends ChangeNotifier {
         );
         _vaultSession = newSession;
       } catch (e) {
+        debugPrint('Could not enable automatic unlock: $e');
         try {
           await _storageRepository.deleteVaultKeyringEntry();
         } catch (rollbackError) {
@@ -1043,17 +1061,23 @@ class OtpState extends ChangeNotifier {
     if (!session.hasKeyringSlot) {
       return;
     }
+    _ensureNoVaultOperationInProgress();
 
     _debouncedSaveTimer?.cancel();
     await _runBusyOperation(BusyOperation.updatingAutoUnlock, () async {
       final newSession =
           LocalVaultEncryptionService.removeKeyringSlotFromSession(session);
       final data = AppData(services: _services, groups: _groups);
-      await _storageRepository.saveEncryptedVaultSession(
-        data,
-        newSession,
-        verify: true,
-      );
+      try {
+        await _storageRepository.saveEncryptedVaultSession(
+          data,
+          newSession,
+          verify: true,
+        );
+      } catch (e) {
+        debugPrint('Could not disable automatic unlock: $e');
+        rethrow;
+      }
       _vaultSession = newSession;
 
       try {
@@ -1100,7 +1124,10 @@ class OtpState extends ChangeNotifier {
     required String? password,
   }) async {
     if (result.vaultSessionKeys != null) {
+      // A v2 session drives every save through the cached DEK, so the plaintext
+      // password is no longer needed and must not linger in memory.
       _vaultSession = result.vaultSessionKeys;
+      _localVaultPassword = null;
       _clearVaultSessionKey();
       return;
     }
@@ -1124,6 +1151,7 @@ class OtpState extends ChangeNotifier {
         verify: true,
       );
       _vaultSession = session;
+      _localVaultPassword = null;
       _clearVaultSessionKey();
     } catch (e) {
       debugPrint('Could not upgrade vault to v2, keeping v1 session: $e');

@@ -954,6 +954,26 @@ void main() {
         expect(loaded.data.toJson(), equals(data.toJson()));
       });
 
+      test('a missing keyring entry requires a password', () async {
+        final keyring = FakeVaultKeyringService();
+        final repository = StorageRepository(
+          localPathOverride: tempDir.path,
+          keyringService: keyring,
+        );
+        final kek = LocalVaultEncryptionService.generateKeyEncryptionKey();
+        await writeVaultFile(
+          repository,
+          await buildKeyringVaultBytes(repository, 'kek-real', kek),
+        );
+        // Vault has a keyring slot, but the keyring itself holds no entry.
+        expect(keyring.record, isNull);
+
+        expect(
+          () => repository.loadStoredData(),
+          throwsA(isA<StoragePasswordRequiredException>()),
+        );
+      });
+
       test('kekId mismatch requires a password', () async {
         final keyring = FakeVaultKeyringService();
         final repository = StorageRepository(

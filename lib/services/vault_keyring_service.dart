@@ -35,6 +35,9 @@ class VaultKeyringService {
       iOptions: IOSOptions(
         accessibility: KeychainAccessibility.first_unlock_this_device,
       ),
+      mOptions: MacOsOptions(
+        accessibility: KeychainAccessibility.first_unlock_this_device,
+      ),
       lOptions: LinuxOptions(),
       wOptions: WindowsOptions(
         useBackwardCompatibility: false,

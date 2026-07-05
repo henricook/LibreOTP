@@ -388,15 +388,6 @@ class LocalVaultEncryptionService {
   // Inspection helpers (no heavy crypto, safe on the main isolate)
   // ---------------------------------------------------------------------------
 
-  static int readVersion(Uint8List vaultBytes) {
-    final envelope = _decodeEnvelope(vaultBytes);
-    final ver = envelope['version'];
-    if (ver is! int) {
-      throw const FormatException('Invalid encrypted vault version');
-    }
-    return ver;
-  }
-
   /// The kekId of the keyring slot if [vaultBytes] is a v2 vault carrying one,
   /// otherwise null.
   static String? readKeyringKekId(Uint8List vaultBytes) {
