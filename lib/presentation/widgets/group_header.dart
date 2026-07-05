@@ -4,8 +4,10 @@ class GroupHeader extends DataRow {
   GroupHeader({
     super.key,
     required String groupName,
+    required Color backgroundColor,
+    required Color textColor,
   }) : super(
-          color: WidgetStateProperty.all(Colors.grey.shade200),
+          color: WidgetStateProperty.all(backgroundColor),
           cells: [
             const DataCell(Text('')), // Icon column
             DataCell(
@@ -13,8 +15,11 @@ class GroupHeader extends DataRow {
                 padding: const EdgeInsets.symmetric(vertical: 4.0),
                 child: Text(
                   groupName,
-                  style: const TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.bold),
+                  style: TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                    color: textColor,
+                  ),
                 ),
               ),
               placeholder: true,

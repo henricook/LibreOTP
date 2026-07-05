@@ -15,6 +15,8 @@ class AppConfig {
   static const String _windowWidthKey = 'window_width';
   static const String _windowHeightKey = 'window_height';
   static const String _windowMaximizedKey = 'window_maximized';
+  static const String _encryptionMigrationDismissedKey =
+      'encryption_migration_dismissed';
 
   // Cached app title to avoid repeated async calls
   static String? _cachedAppTitle;
@@ -105,6 +107,17 @@ class AppConfig {
     await prefs.setString(_displayModePreferenceKey, displayMode.name);
   }
 
+  // Encryption migration prompt suppression
+  static Future<bool> getEncryptionMigrationDismissed() async {
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool(_encryptionMigrationDismissedKey) ?? false;
+  }
+
+  static Future<void> setEncryptionMigrationDismissed(bool dismissed) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_encryptionMigrationDismissedKey, dismissed);
+  }
+
   // Window bounds persistence
   static Future<Rect?> getWindowBounds() async {
     final prefs = await SharedPreferences.getInstance();
@@ -124,6 +137,27 @@ class AppConfig {
     await prefs.setDouble(_windowYKey, bounds.top);
     await prefs.setDouble(_windowWidthKey, bounds.width);
     await prefs.setDouble(_windowHeightKey, bounds.height);
+  }
+
+  static Future<void> persistWindowState({
+    required bool maximized,
+    Rect? bounds,
+  }) async {
+    final prefs = await SharedPreferences.getInstance();
+    final writes = <Future<bool>>[
+      prefs.setBool(_windowMaximizedKey, maximized),
+    ];
+
+    if (bounds != null) {
+      writes.addAll([
+        prefs.setDouble(_windowXKey, bounds.left),
+        prefs.setDouble(_windowYKey, bounds.top),
+        prefs.setDouble(_windowWidthKey, bounds.width),
+        prefs.setDouble(_windowHeightKey, bounds.height),
+      ]);
+    }
+
+    await Future.wait(writes);
   }
 
   static Future<bool> getWindowMaximized() async {

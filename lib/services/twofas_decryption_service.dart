@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
-import 'package:pointycastle/export.dart';
+
+import 'crypto_primitives.dart';
 
 class TwoFasDecryptionService {
   static const int _iterations = 10000;
@@ -34,7 +35,7 @@ class TwoFasDecryptionService {
     final salt = base64.decode(parts[1]);
     final iv = base64.decode(parts[2]);
 
-    if (cipherWithTag.length <= _authTagLength) {
+    if (cipherWithTag.length < _authTagLength) {
       throw FormatException('Invalid cipher data length');
     }
 
@@ -66,7 +67,7 @@ class TwoFasDecryptionService {
       final refCipherWithTag = base64.decode(referenceParts[0]);
       final refIv = base64.decode(referenceParts[2]);
 
-      if (refCipherWithTag.length <= _authTagLength) return false;
+      if (refCipherWithTag.length < _authTagLength) return false;
 
       final refCipherText =
           refCipherWithTag.sublist(0, refCipherWithTag.length - _authTagLength);
@@ -84,25 +85,17 @@ class TwoFasDecryptionService {
   }
 
   static Uint8List _deriveKey(String password, Uint8List salt) {
-    final pbkdf2 = PBKDF2KeyDerivator(HMac(SHA256Digest(), 64));
-    pbkdf2.init(Pbkdf2Parameters(salt, _iterations, _keyLength));
-    return pbkdf2.process(utf8.encode(password));
+    return derivePbkdf2HmacSha256Key(password, salt, _iterations, _keyLength);
   }
 
   static Uint8List _decryptAesGcm(
       Uint8List cipherText, Uint8List key, Uint8List iv, Uint8List authTag) {
-    final cipher = GCMBlockCipher(AESEngine());
-    final params =
-        AEADParameters(KeyParameter(key), authTag.length * 8, iv, Uint8List(0));
-
-    cipher.init(false, params);
-
     final input = Uint8List(cipherText.length + authTag.length);
     input.setRange(0, cipherText.length, cipherText);
     input.setRange(cipherText.length, input.length, authTag);
 
     try {
-      return cipher.process(input);
+      return aesGcmDecrypt(key, iv, input, Uint8List(0), authTag.length);
     } catch (e) {
       throw ArgumentError(
           'Decryption failed: Invalid password or corrupted data');

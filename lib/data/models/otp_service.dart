@@ -176,6 +176,22 @@ class OtpConfig {
         'period': period,
         'algorithm': algorithm,
       };
+
+  OtpConfig copyWith({
+    String? account,
+    String? issuer,
+    int? digits,
+    int? period,
+    String? algorithm,
+  }) {
+    return OtpConfig(
+      account: account ?? this.account,
+      issuer: issuer ?? this.issuer,
+      digits: digits ?? this.digits,
+      period: period ?? this.period,
+      algorithm: algorithm ?? this.algorithm,
+    );
+  }
 }
 
 class OrderInfo {

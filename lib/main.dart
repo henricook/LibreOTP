@@ -89,6 +89,8 @@ class _LibreOTPAppState extends State<LibreOTPApp> with WindowListener {
   ThemeMode _themeMode = ThemeMode.system;
   Timer? _saveTimer;
   bool _isMaximized = false;
+  Rect? _lastWindowBounds;
+  bool _isClosing = false;
 
   @override
   void initState() {
@@ -123,32 +125,58 @@ class _LibreOTPAppState extends State<LibreOTPApp> with WindowListener {
     _saveTimer?.cancel();
     _saveTimer = Timer(const Duration(milliseconds: 500), () async {
       if (_isMaximized) return;
-      final position = await windowManager.getPosition();
-      final size = await windowManager.getSize();
-      await AppConfig.setWindowBounds(
-        Rect.fromLTWH(position.dx, position.dy, size.width, size.height),
-      );
+      final bounds =
+          await _captureCurrentWindowBounds(reason: 'debounced-save');
+      if (bounds == null) {
+        return;
+      }
+      await AppConfig.setWindowBounds(bounds);
     });
   }
 
-  Future<void> _saveWindowState() async {
-    await AppConfig.setWindowMaximized(_isMaximized);
-    if (!_isMaximized) {
+  Future<Rect?> _captureCurrentWindowBounds({required String reason}) async {
+    if (_isMaximized) {
+      return _lastWindowBounds;
+    }
+
+    try {
       final position = await windowManager.getPosition();
       final size = await windowManager.getSize();
-      await AppConfig.setWindowBounds(
-        Rect.fromLTWH(position.dx, position.dy, size.width, size.height),
-      );
+      final bounds =
+          Rect.fromLTWH(position.dx, position.dy, size.width, size.height);
+      _lastWindowBounds = bounds;
+      return bounds;
+    } catch (_) {
+      return _lastWindowBounds;
     }
+  }
+
+  Future<void> _saveWindowStateOnClose() async {
+    Rect? boundsToPersist = _lastWindowBounds;
+
+    if (!_isMaximized && boundsToPersist == null) {
+      boundsToPersist =
+          await _captureCurrentWindowBounds(reason: 'close-fallback')
+              .timeout(const Duration(milliseconds: 150), onTimeout: () {
+        return _lastWindowBounds;
+      });
+    }
+
+    await AppConfig.persistWindowState(
+      maximized: _isMaximized,
+      bounds: _isMaximized ? null : boundsToPersist,
+    ).timeout(const Duration(milliseconds: 150), onTimeout: () {});
   }
 
   @override
   void onWindowResized() {
+    unawaited(_captureCurrentWindowBounds(reason: 'resize'));
     _debounceSaveWindowBounds();
   }
 
   @override
   void onWindowMoved() {
+    unawaited(_captureCurrentWindowBounds(reason: 'move'));
     _debounceSaveWindowBounds();
   }
 
@@ -162,13 +190,29 @@ class _LibreOTPAppState extends State<LibreOTPApp> with WindowListener {
   void onWindowUnmaximize() {
     _isMaximized = false;
     AppConfig.setWindowMaximized(false);
+    unawaited(_captureCurrentWindowBounds(reason: 'unmaximize'));
   }
 
   @override
   void onWindowClose() async {
+    if (_isClosing) {
+      return;
+    }
+    _isClosing = true;
     _saveTimer?.cancel();
-    await _saveWindowState();
-    await windowManager.destroy();
+    try {
+      await _saveWindowStateOnClose();
+    } catch (e) {
+      debugPrint('Could not persist window state on close: $e');
+    }
+    try {
+      await windowManager.setPreventClose(false);
+      await windowManager.close();
+    } catch (e) {
+      // Let the user retry closing instead of latching the window open.
+      _isClosing = false;
+      debugPrint('Window close failed: $e');
+    }
   }
 
   @override

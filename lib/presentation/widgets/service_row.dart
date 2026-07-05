@@ -9,6 +9,7 @@ class ServiceRow extends DataRow {
     required OtpService service,
     required OtpDisplayState displayState,
     required Function() onTap,
+    required Future<void> Function() onEdit,
     required double iconWidth,
     required double nameWidth,
     required double accountWidth,
@@ -18,8 +19,10 @@ class ServiceRow extends DataRow {
   }) : super(
           cells: <DataCell>[
             DataCell(
-              SizedBox(
+              _buildInteractiveCell(
                 width: iconWidth,
+                onTap: onTap,
+                onEdit: onEdit,
                 child: TwoFasIconService.buildServiceIcon(
                   service.name,
                   service.otp.issuer,
@@ -28,36 +31,91 @@ class ServiceRow extends DataRow {
               ),
             ),
             DataCell(
-              SizedBox(
+              _buildInteractiveCell(
                 width: nameWidth,
+                onTap: onTap,
+                onEdit: onEdit,
                 child: Text(service.name),
               ),
             ),
             DataCell(
-              SizedBox(
+              _buildInteractiveCell(
                 width: accountWidth,
+                onTap: onTap,
+                onEdit: onEdit,
                 child: Text(service.otp.account),
               ),
             ),
             DataCell(
-              SizedBox(
+              _buildInteractiveCell(
                 width: issuerWidth,
+                onTap: onTap,
+                onEdit: onEdit,
                 child: Text(service.otp.issuer),
               ),
             ),
             DataCell(
-              SizedBox(
+              _buildInteractiveCell(
                 width: otpWidth,
+                onTap: onTap,
+                onEdit: onEdit,
                 child: Text(displayState.otpCode),
               ),
             ),
             DataCell(
-              SizedBox(
+              _buildInteractiveCell(
                 width: validityWidth,
+                onTap: onTap,
+                onEdit: onEdit,
                 child: Text(displayState.validity),
               ),
             ),
           ],
           onSelectChanged: (_) => onTap(),
         );
+
+  static Widget _buildInteractiveCell({
+    required double width,
+    required Widget child,
+    required VoidCallback onTap,
+    required Future<void> Function() onEdit,
+  }) {
+    return Builder(
+      builder: (context) {
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onTap,
+          onSecondaryTapDown: (details) async {
+            final selectedAction = await showMenu<_ServiceRowAction>(
+              context: context,
+              position: RelativeRect.fromLTRB(
+                details.globalPosition.dx,
+                details.globalPosition.dy,
+                details.globalPosition.dx,
+                details.globalPosition.dy,
+              ),
+              items: const [
+                PopupMenuItem<_ServiceRowAction>(
+                  value: _ServiceRowAction.edit,
+                  child: Text('Edit entry'),
+                ),
+              ],
+            );
+
+            if (selectedAction == _ServiceRowAction.edit) {
+              await onEdit();
+            }
+          },
+          child: SizedBox(
+            width: width,
+            child: child,
+          ),
+        );
+      },
+    );
+  }
+}
+
+enum _ServiceRowAction {
+  edit,
 }

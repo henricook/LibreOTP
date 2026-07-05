@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:libreotp/data/models/otp_service.dart';
 import 'package:libreotp/presentation/state/otp_display_state.dart';
@@ -29,6 +30,7 @@ void main() {
       required OtpService service,
       required OtpDisplayState displayState,
       VoidCallback? onTap,
+      Future<void> Function()? onEdit,
     }) {
       return MaterialApp(
         home: Scaffold(
@@ -46,6 +48,7 @@ void main() {
                 service: service,
                 displayState: displayState,
                 onTap: onTap ?? () {},
+                onEdit: onEdit ?? () async {},
                 iconWidth: 40,
                 nameWidth: 200,
                 accountWidth: 200,
@@ -207,6 +210,35 @@ void main() {
 
         // Should render without issues
         expect(find.byType(DataTable), findsOneWidget);
+      });
+
+      testWidgets('should show edit action on right click',
+          (WidgetTester tester) async {
+        var editCount = 0;
+
+        await tester.pumpWidget(createTestWidget(
+          service: testService,
+          displayState: emptyDisplayState,
+          onEdit: () async {
+            editCount++;
+          },
+        ));
+
+        final nameCell = find.text('GitHub');
+        final gesture = await tester.createGesture(
+          kind: PointerDeviceKind.mouse,
+          buttons: kSecondaryMouseButton,
+        );
+        await gesture.down(tester.getCenter(nameCell));
+        await gesture.up();
+        await tester.pumpAndSettle();
+
+        expect(find.text('Edit entry'), findsOneWidget);
+
+        await tester.tap(find.text('Edit entry'));
+        await tester.pumpAndSettle();
+
+        expect(editCount, equals(1));
       });
     });
 
