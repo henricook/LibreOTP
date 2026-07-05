@@ -108,7 +108,8 @@ class _DashboardPageState extends State<DashboardPage> {
       builder: (context) => AlertDialog(
         title: const Text('Encrypt Local Data'),
         content: const Text(
-          'LibreOTP loaded plaintext local data from data.json. You can migrate it into an encrypted local vault and remove the plaintext file.',
+          'LibreOTP loaded plaintext local data from data.json. You can migrate it into an encrypted local vault and remove the plaintext file.\n\n'
+          'Encryption will be the default in future. Once encrypted, there is no way to switch back to plaintext storage.',
         ),
         actions: [
           TextButton(
