@@ -549,6 +549,9 @@ class OtpState extends ChangeNotifier {
     String filePath, {
     String? password,
   }) async {
+    // A pending debounced save holds pre-merge state; let it fire during the
+    // import's save and it can clobber the merged data on disk.
+    _debouncedSaveTimer?.cancel();
     _isLoading = true;
     _encryptionError = null;
     notifyListeners();

@@ -21,6 +21,7 @@ class MockStorageRepository extends StorageRepository {
   bool shouldThrowOnSave = false;
   late File _testFile;
   AppData? savedData;
+  int saveCallCount = 0;
 
   MockStorageRepository() {
     final tempDir = Directory.systemTemp;
@@ -42,6 +43,7 @@ class MockStorageRepository extends StorageRepository {
       throw const FileSystemException('Simulated save failure');
     }
     savedData = data;
+    saveCallCount++;
   }
 
   @override
@@ -428,6 +430,56 @@ void main() {
           expect(otpState.encryptionError, contains('Failed to import backup'));
         },
       );
+
+      testWidgets('cancels a pending debounced save when importing', (
+        WidgetTester tester,
+      ) async {
+        final existingService = OtpService(
+          id: 'existing-1',
+          name: 'GitHub',
+          secret: 'SECRET1',
+          otp: const OtpConfig(account: 'work@example.com', issuer: 'GitHub'),
+          order: const OrderInfo(position: 0),
+        );
+        final newImportedService = OtpService(
+          id: 'import-new',
+          name: 'Google',
+          secret: 'SECRET2',
+          otp: const OtpConfig(account: 'me@gmail.com', issuer: 'Google'),
+          order: const OrderInfo(position: 0),
+        );
+
+        // setUp already initialised otpState against empty data; reset the
+        // mock to the fixture and re-init on the real clock.
+        mockRepository.setTestData([], [existingService]);
+        mockRepository.setImportData([], [newImportedService]);
+        await tester.pumpWidget(MaterialApp(home: Scaffold(body: Container())));
+
+        // runAsync escapes the fake-async zone so the real 2s debounce timer
+        // and the periodic OTP timer behave normally.
+        await tester.runAsync(() async {
+          await otpState.initializeData();
+          final context = tester.element(find.byType(Container));
+          // Schedules the 2s debounced usage save.
+          otpState.generateOtp('Ungrouped', 0, context);
+
+          final importResult = await otpState.importBackupFile('dummy.json');
+
+          expect(importResult, isNotNull);
+          expect(mockRepository.saveCallCount, equals(1));
+
+          // The pre-import debounced save must have been cancelled, so no
+          // second write with stale data may fire once the 2s window passes.
+          await Future.delayed(const Duration(milliseconds: 2200));
+          expect(mockRepository.saveCallCount, equals(1));
+          expect(
+            mockRepository.savedData!.services.map((service) => service.id),
+            unorderedEquals(['existing-1', 'import-new']),
+          );
+        });
+
+        disposeState();
+      });
     });
 
     group('State notifications', () {
