@@ -98,6 +98,38 @@ class MockStorageRepository extends StorageRepository {
   }
 
   @override
+  Future<void> saveEncryptedVaultSession(
+    AppData data,
+    VaultSessionKeys session, {
+    bool verify = false,
+  }) async {
+    if (shouldThrowOnSave) {
+      throw const FileSystemException('Simulated save failure');
+    }
+    savedData = data;
+    savedSource = StorageDataSource.encryptedVault;
+    saveCallCount++;
+    encryptedSaveCallCount++;
+  }
+
+  @override
+  Future<VaultSessionKeys> createEncryptedVault(
+    AppData data,
+    String password, {
+    bool verify = false,
+  }) async {
+    if (shouldThrowOnSave) {
+      throw const FileSystemException('Simulated save failure');
+    }
+    savedData = data;
+    savedSource = StorageDataSource.encryptedVault;
+    encryptedSavePassword = password;
+    saveCallCount++;
+    encryptedSaveCallCount++;
+    return _fakeVaultSession();
+  }
+
+  @override
   Future<void> deletePlaintextData() async {}
 
   @override
@@ -109,7 +141,7 @@ class MockStorageRepository extends StorageRepository {
   }
 
   @override
-  Future<void> migratePlaintextDataToEncryptedVault(
+  Future<VaultSessionKeys> migratePlaintextDataToEncryptedVault(
     AppData data,
     String password,
   ) async {
@@ -118,7 +150,15 @@ class MockStorageRepository extends StorageRepository {
       source: StorageDataSource.encryptedVault,
       password: password,
     );
+    return _fakeVaultSession();
   }
+
+  VaultSessionKeys _fakeVaultSession() => VaultSessionKeys(
+        dek: Uint8List(32),
+        keySlots: const [
+          {'type': 'password'},
+        ],
+      );
 
   @override
   Future<File> getLocalFile() async => _testFile;

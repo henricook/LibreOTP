@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:uuid/uuid.dart';
 import '../../config/app_config.dart';
 import '../../config/display_mode.dart';
 import '../../data/models/otp_service.dart';
@@ -12,6 +13,7 @@ import '../../utils/clipboard_utils.dart';
 import '../../services/local_vault_encryption_service.dart';
 import '../../services/secure_storage_service.dart';
 import '../../services/twofas_icon_service.dart';
+import '../../services/vault_keyring_service.dart';
 import 'otp_display_state.dart';
 
 enum PasswordPromptReason { none, encryptedVault, encryptedBackup }
@@ -21,6 +23,7 @@ enum BusyOperation {
   decryptingBackup,
   encryptingLocalData,
   changingVaultPassword,
+  updatingAutoUnlock,
 }
 
 class OtpState extends ChangeNotifier {
@@ -54,6 +57,7 @@ class OtpState extends ChangeNotifier {
   Uint8List? _vaultKey;
   Uint8List? _vaultSalt;
   int? _vaultIterations;
+  VaultSessionKeys? _vaultSession;
   BusyOperation? _busyOperation;
 
   // Helper method to yield control to allow UI updates
@@ -131,6 +135,16 @@ class OtpState extends ChangeNotifier {
   bool get canEncryptLocalData =>
       !usesEncryptedLocalStorage &&
       (_services.isNotEmpty || _groups.isNotEmpty);
+
+  /// True when the vault currently carries a keyring slot, meaning it will
+  /// unlock automatically on this device.
+  bool get autoUnlockEnabled => _vaultSession?.hasKeyringSlot ?? false;
+
+  /// True when auto-unlock can be toggled: the encrypted vault is active and
+  /// unlocked as v2 in this session, and no vault operation is in flight.
+  bool get canConfigureAutoUnlock =>
+      usesEncryptedLocalStorage && _vaultSession != null && !isBusy;
+
   bool get isBusy => _busyOperation != null;
   String? get busyMessage {
     switch (_busyOperation) {
@@ -142,6 +156,8 @@ class OtpState extends ChangeNotifier {
         return 'Encrypting local data...';
       case BusyOperation.changingVaultPassword:
         return 'Updating vault password...';
+      case BusyOperation.updatingAutoUnlock:
+        return 'Updating automatic unlock...';
       case null:
         return null;
     }
@@ -154,7 +170,7 @@ class OtpState extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
-    _clearVaultSessionKey();
+    _clearVaultSession();
     _cancelAllTimers();
     _debouncedSaveTimer?.cancel();
     _usageResortTimer?.cancel();
@@ -279,6 +295,9 @@ class OtpState extends ChangeNotifier {
       if (withUIYields) await _yieldToUI(24);
 
       _applyLoadedData(result);
+      if (result.source == StorageDataSource.encryptedVault) {
+        await _establishVaultSession(result, password: null);
+      }
       _groupedServices = _groupServicesByGroup();
 
       // Preload icons for imported services asynchronously
@@ -343,7 +362,7 @@ class OtpState extends ChangeNotifier {
         _encryptionErrorKind = null;
 
         if (result.source == StorageDataSource.encryptedVault) {
-          await _cacheVaultSessionKey(password);
+          await _establishVaultSession(result, password: password);
         }
 
         // Preload icons for imported services asynchronously
@@ -911,13 +930,15 @@ class OtpState extends ChangeNotifier {
     _debouncedSaveTimer?.cancel();
     await _runBusyOperation(BusyOperation.encryptingLocalData, () async {
       final data = AppData(services: _services, groups: _groups);
-      await _storageRepository.migratePlaintextDataToEncryptedVault(
+      final session =
+          await _storageRepository.migratePlaintextDataToEncryptedVault(
         data,
         password,
       );
       _activeStorageSource = StorageDataSource.encryptedVault;
       _localVaultPassword = password;
-      await _cacheVaultSessionKey(password);
+      _vaultSession = session;
+      _clearVaultSessionKey();
       _shouldPromptForEncryptionMigration = false;
       _hasExistingData = true;
       notifyListeners();
@@ -932,14 +953,116 @@ class OtpState extends ChangeNotifier {
     _debouncedSaveTimer?.cancel();
     await _runBusyOperation(BusyOperation.changingVaultPassword, () async {
       final data = AppData(services: _services, groups: _groups);
-      await _storageRepository.saveData(
+      final session = _vaultSession;
+      if (session != null) {
+        // v2: re-wrap only the password slot so the keyring slot, and therefore
+        // auto-unlock, survives the password change.
+        final newSession = await LocalVaultEncryptionService.rewrapPasswordSlot(
+          session,
+          password,
+        );
+        await _storageRepository.saveEncryptedVaultSession(
+          data,
+          newSession,
+          verify: true,
+        );
+        _vaultSession = newSession;
+      } else {
+        // v1 fallback: create a fresh v2 vault under the new password.
+        final newSession = await _storageRepository.createEncryptedVault(
+          data,
+          password,
+          verify: true,
+        );
+        _vaultSession = newSession;
+        _clearVaultSessionKey();
+      }
+      _localVaultPassword = password;
+      notifyListeners();
+    });
+  }
+
+  /// Enables passwordless unlock on this device by storing a key-encryption key
+  /// in the system keyring and wrapping the vault's data key with it.
+  ///
+  /// The keyring entry is written and read back before the slot is added, and
+  /// rolled back if the vault save fails, so a failure can never leave a keyring
+  /// key without a matching slot.
+  Future<void> enableAutoUnlock() async {
+    final session = _vaultSession;
+    if (!usesEncryptedLocalStorage || session == null) {
+      throw StateError('Encrypted local vault session is not active');
+    }
+
+    _debouncedSaveTimer?.cancel();
+    await _runBusyOperation(BusyOperation.updatingAutoUnlock, () async {
+      final kek = LocalVaultEncryptionService.generateKeyEncryptionKey();
+      final kekId = const Uuid().v4();
+      await _storageRepository.writeVaultKeyringEntry(
+        VaultKeyringRecord(id: kekId, kek: kek),
+      );
+
+      try {
+        final newSession =
+            await LocalVaultEncryptionService.addKeyringSlotToSession(
+          session,
+          kekId,
+          kek,
+        );
+        final data = AppData(services: _services, groups: _groups);
+        await _storageRepository.saveEncryptedVaultSession(
+          data,
+          newSession,
+          verify: true,
+        );
+        _vaultSession = newSession;
+      } catch (e) {
+        try {
+          await _storageRepository.deleteVaultKeyringEntry();
+        } catch (rollbackError) {
+          debugPrint(
+            'Could not roll back keyring entry after failed enable: '
+            '$rollbackError',
+          );
+        }
+        rethrow;
+      }
+      notifyListeners();
+    });
+  }
+
+  /// Disables passwordless unlock by rewriting the vault without the keyring
+  /// slot first, then deleting the keyring key. Ordering it this way means a
+  /// keyring deletion failure degrades to password unlock rather than a
+  /// lockout.
+  Future<void> disableAutoUnlock() async {
+    final session = _vaultSession;
+    if (!usesEncryptedLocalStorage || session == null) {
+      throw StateError('Encrypted local vault session is not active');
+    }
+    if (!session.hasKeyringSlot) {
+      return;
+    }
+
+    _debouncedSaveTimer?.cancel();
+    await _runBusyOperation(BusyOperation.updatingAutoUnlock, () async {
+      final newSession =
+          LocalVaultEncryptionService.removeKeyringSlotFromSession(session);
+      final data = AppData(services: _services, groups: _groups);
+      await _storageRepository.saveEncryptedVaultSession(
         data,
-        source: StorageDataSource.encryptedVault,
-        password: password,
+        newSession,
         verify: true,
       );
-      _localVaultPassword = password;
-      await _cacheVaultSessionKey(password);
+      _vaultSession = newSession;
+
+      try {
+        await _storageRepository.deleteVaultKeyringEntry();
+      } catch (e) {
+        debugPrint(
+          'Could not delete keyring entry after disabling auto-unlock: $e',
+        );
+      }
       notifyListeners();
     });
   }
@@ -962,11 +1085,51 @@ class OtpState extends ChangeNotifier {
     _localVaultPassword =
         result.source == StorageDataSource.encryptedVault ? password : null;
     if (result.source != StorageDataSource.encryptedVault) {
-      _clearVaultSessionKey();
+      _clearVaultSession();
     }
     _shouldPromptForEncryptionMigration = !_encryptionMigrationDismissed &&
         result.source == StorageDataSource.plaintextJson &&
         (_services.isNotEmpty || _groups.isNotEmpty);
+  }
+
+  /// Caches the v2 session for later slot-preserving saves. For a v1 vault it
+  /// transparently rewrites the file as v2; if that fails it keeps the v1
+  /// session behaviour so the unlock is never blocked.
+  Future<void> _establishVaultSession(
+    LoadedAppData result, {
+    required String? password,
+  }) async {
+    if (result.vaultSessionKeys != null) {
+      _vaultSession = result.vaultSessionKeys;
+      _clearVaultSessionKey();
+      return;
+    }
+
+    if (result.vaultNeedsUpgrade && password != null) {
+      await _upgradeV1VaultToV2(password);
+      return;
+    }
+
+    if (password != null) {
+      await _cacheVaultSessionKey(password);
+    }
+  }
+
+  Future<void> _upgradeV1VaultToV2(String password) async {
+    try {
+      final data = AppData(services: _services, groups: _groups);
+      final session = await _storageRepository.createEncryptedVault(
+        data,
+        password,
+        verify: true,
+      );
+      _vaultSession = session;
+      _clearVaultSessionKey();
+    } catch (e) {
+      debugPrint('Could not upgrade vault to v2, keeping v1 session: $e');
+      _vaultSession = null;
+      await _cacheVaultSessionKey(password);
+    }
   }
 
   void _setStorageModeAfterImport() {
@@ -977,7 +1140,7 @@ class OtpState extends ChangeNotifier {
 
     _activeStorageSource = StorageDataSource.plaintextJson;
     _localVaultPassword = null;
-    _clearVaultSessionKey();
+    _clearVaultSession();
     _shouldPromptForEncryptionMigration = !_encryptionMigrationDismissed &&
         (_services.isNotEmpty || _groups.isNotEmpty);
   }
@@ -985,18 +1148,26 @@ class OtpState extends ChangeNotifier {
   Future<void> _persistCurrentData() async {
     final data = AppData(services: _services, groups: _groups);
 
-    if (_activeStorageSource == StorageDataSource.encryptedVault &&
-        _vaultKey != null &&
-        _vaultSalt != null &&
-        _vaultIterations != null) {
-      await _storageRepository.saveEncryptedDataWithKey(
-        data,
-        _vaultKey!,
-        salt: _vaultSalt!,
-        iterations: _vaultIterations!,
-      );
-      await _storageRepository.deletePlaintextData();
-      return;
+    if (_activeStorageSource == StorageDataSource.encryptedVault) {
+      if (_vaultSession != null) {
+        await _storageRepository.saveEncryptedVaultSession(
+          data,
+          _vaultSession!,
+        );
+        await _storageRepository.deletePlaintextData();
+        return;
+      }
+
+      if (_vaultKey != null && _vaultSalt != null && _vaultIterations != null) {
+        await _storageRepository.saveEncryptedDataWithKey(
+          data,
+          _vaultKey!,
+          salt: _vaultSalt!,
+          iterations: _vaultIterations!,
+        );
+        await _storageRepository.deletePlaintextData();
+        return;
+      }
     }
 
     await _storageRepository.saveData(
@@ -1026,6 +1197,11 @@ class OtpState extends ChangeNotifier {
     _vaultKey = null;
     _vaultSalt = null;
     _vaultIterations = null;
+  }
+
+  void _clearVaultSession() {
+    _vaultSession = null;
+    _clearVaultSessionKey();
   }
 }
 

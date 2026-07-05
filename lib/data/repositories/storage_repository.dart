@@ -9,6 +9,7 @@ import '../models/group.dart';
 import '../../services/local_vault_encryption_service.dart';
 import '../../services/twofas_decryption_service.dart';
 import '../../services/secure_storage_service.dart';
+import '../../services/vault_keyring_service.dart';
 
 class AppData {
   final List<OtpService> services;
@@ -54,7 +55,20 @@ class LoadedAppData {
   final AppData data;
   final StorageDataSource source;
 
-  const LoadedAppData({required this.data, required this.source});
+  /// v2 vault session material (DEK + slots) when the vault was unlocked as v2.
+  /// Null for plaintext data and for v1 vaults.
+  final VaultSessionKeys? vaultSessionKeys;
+
+  /// True when a v1 vault was unlocked and should be transparently rewritten as
+  /// v2 by the caller.
+  final bool vaultNeedsUpgrade;
+
+  const LoadedAppData({
+    required this.data,
+    required this.source,
+    this.vaultSessionKeys,
+    this.vaultNeedsUpgrade = false,
+  });
 }
 
 class StoragePasswordRequiredException implements Exception {
@@ -88,9 +102,13 @@ class StorageRepository {
   static const String _dataFileName = 'data.json';
   static const String _encryptedDataFileName = 'data.bin';
   final String? _localPathOverride;
+  final VaultKeyringService _keyringService;
 
-  StorageRepository({String? localPathOverride})
-      : _localPathOverride = localPathOverride;
+  StorageRepository({
+    String? localPathOverride,
+    VaultKeyringService? keyringService,
+  })  : _localPathOverride = localPathOverride,
+        _keyringService = keyringService ?? VaultKeyringService();
 
   Future<String> get _localPath async {
     if (_localPathOverride != null) {
@@ -140,34 +158,105 @@ class StorageRepository {
     await file.writeAsString(data.toJsonString());
   }
 
+  /// Creates a fresh v2 vault (new DEK guarded by a password slot) and returns
+  /// the session material that keeps it unlocked.
+  Future<VaultSessionKeys> createEncryptedVault(
+    AppData data,
+    String password, {
+    bool verify = false,
+  }) async {
+    final plaintextJson = serializePlaintextAppData(data);
+    final built = await LocalVaultEncryptionService.createEncryptedVault(
+      plaintextJson,
+      password,
+    );
+    await _writeEncryptedVaultBytes(
+      built.bytes,
+      verify: verify
+          ? (written) async {
+              final check = await LocalVaultEncryptionService.decrypt(
+                written,
+                password,
+              );
+              if (check != plaintextJson) {
+                throw const FileSystemException(
+                  'Encrypted vault verification failed after write',
+                );
+              }
+            }
+          : null,
+    );
+    return built.session;
+  }
+
   Future<void> saveEncryptedData(
     AppData data,
     String password, {
     bool verify = false,
   }) async {
+    await createEncryptedVault(data, password, verify: verify);
+  }
+
+  /// Rewrites the vault payload with the session's DEK, preserving every key
+  /// slot (known and unknown alike).
+  Future<void> saveEncryptedVaultSession(
+    AppData data,
+    VaultSessionKeys session, {
+    bool verify = false,
+  }) async {
+    final plaintextJson = serializePlaintextAppData(data);
+    final bytes = await LocalVaultEncryptionService.buildEnvelopeFromSession(
+      plaintextJson,
+      session,
+    );
+    await _writeEncryptedVaultBytes(
+      bytes,
+      verify: verify
+          ? (written) async {
+              final check = await LocalVaultEncryptionService.decryptWithDek(
+                written,
+                session.dek,
+              );
+              if (check != plaintextJson) {
+                throw const FileSystemException(
+                  'Encrypted vault verification failed after write',
+                );
+              }
+            }
+          : null,
+    );
+  }
+
+  /// Legacy v1 session save. Retained for the rare case where a v1 vault could
+  /// not be upgraded to v2 after unlock.
+  Future<void> saveEncryptedDataWithKey(
+    AppData data,
+    Uint8List key, {
+    required Uint8List salt,
+    required int iterations,
+  }) async {
+    final plaintextJson = serializePlaintextAppData(data);
+    final encryptedBytes = await LocalVaultEncryptionService.encryptWithKey(
+      plaintextJson,
+      key,
+      salt: salt,
+      iterations: iterations,
+    );
+    await _writeEncryptedVaultBytes(encryptedBytes);
+  }
+
+  Future<void> _writeEncryptedVaultBytes(
+    Uint8List bytes, {
+    Future<void> Function(Uint8List written)? verify,
+  }) async {
     final encryptedFile = await getEncryptedLocalFile();
     final tempFile = File('${encryptedFile.path}.tmp');
-    final plaintextJson = serializePlaintextAppData(data);
 
     try {
-      final encryptedBytes = await LocalVaultEncryptionService.encrypt(
-        plaintextJson,
-        password,
-      );
-      await tempFile.writeAsBytes(encryptedBytes, flush: true);
-
-      if (verify) {
-        final verifiedJson = await LocalVaultEncryptionService.decrypt(
-          await tempFile.readAsBytes(),
-          password,
-        );
-        if (verifiedJson != plaintextJson) {
-          throw const FileSystemException(
-            'Encrypted vault verification failed after write',
-          );
-        }
+      await tempFile.writeAsBytes(bytes, flush: true);
+      if (verify != null) {
+        await verify(await tempFile.readAsBytes());
       }
-
       await _replaceEncryptedFile(tempFile, encryptedFile);
     } finally {
       if (await tempFile.exists()) {
@@ -176,31 +265,16 @@ class StorageRepository {
     }
   }
 
-  Future<void> saveEncryptedDataWithKey(
-    AppData data,
-    Uint8List key, {
-    required Uint8List salt,
-    required int iterations,
-  }) async {
-    final encryptedFile = await getEncryptedLocalFile();
-    final tempFile = File('${encryptedFile.path}.tmp');
-    final plaintextJson = serializePlaintextAppData(data);
+  Future<VaultKeyringRecord?> readVaultKeyringEntry() {
+    return _keyringService.read();
+  }
 
-    try {
-      final encryptedBytes = await LocalVaultEncryptionService.encryptWithKey(
-        plaintextJson,
-        key,
-        salt: salt,
-        iterations: iterations,
-      );
-      await tempFile.writeAsBytes(encryptedBytes, flush: true);
+  Future<void> writeVaultKeyringEntry(VaultKeyringRecord record) {
+    return _keyringService.write(record);
+  }
 
-      await _replaceEncryptedFile(tempFile, encryptedFile);
-    } finally {
-      if (await tempFile.exists()) {
-        await tempFile.delete();
-      }
-    }
+  Future<void> deleteVaultKeyringEntry() {
+    return _keyringService.delete();
   }
 
   /// Atomically replaces [encryptedFile] with [tempFile], keeping the previous
@@ -287,12 +361,13 @@ class StorageRepository {
     }
   }
 
-  Future<void> migratePlaintextDataToEncryptedVault(
+  Future<VaultSessionKeys> migratePlaintextDataToEncryptedVault(
     AppData data,
     String password,
   ) async {
-    await saveEncryptedData(data, password, verify: true);
+    final session = await createEncryptedVault(data, password, verify: true);
     await deletePlaintextData();
+    return session;
   }
 
   Future<bool> hasPlaintextData() async {
@@ -432,7 +507,13 @@ class StorageRepository {
   }
 
   Future<LoadedAppData> _loadEncryptedVaultData({String? password}) async {
+    final contents = await readEncryptedAppData();
+
     if (password == null || password.isEmpty) {
+      final autoUnlocked = await _tryKeyringAutoUnlock(contents);
+      if (autoUnlocked != null) {
+        return autoUnlocked;
+      }
       throw const StoragePasswordRequiredException(
         StorageDataSource.encryptedVault,
         'Password required for encrypted vault',
@@ -440,15 +521,16 @@ class StorageRepository {
     }
 
     try {
-      final contents = await readEncryptedAppData();
-      final decryptedJson = await LocalVaultEncryptionService.decrypt(
+      final unlocked = await LocalVaultEncryptionService.unlockWithPassword(
         contents,
         password,
       );
       await _cleanupVaultArtifactsAfterUnlock();
       return LoadedAppData(
-        data: parsePlaintextAppData(decryptedJson),
+        data: parsePlaintextAppData(unlocked.plaintextJson),
         source: StorageDataSource.encryptedVault,
+        vaultSessionKeys: unlocked.sessionKeys,
+        vaultNeedsUpgrade: unlocked.needsUpgrade,
       );
     } catch (e) {
       final VaultLoadErrorKind kind;
@@ -464,6 +546,42 @@ class StorageRepository {
         'Failed to unlock encrypted vault: $e',
         kind: kind,
       );
+    }
+  }
+
+  /// Attempts a silent unlock using the KEK stored in the system keyring. Any
+  /// failure (no entry, id mismatch, GCM auth failure, keyring exception)
+  /// returns null so the caller falls back to the password prompt. A failed
+  /// silent attempt is never surfaced as an error.
+  Future<LoadedAppData?> _tryKeyringAutoUnlock(Uint8List contents) async {
+    try {
+      final kekId = LocalVaultEncryptionService.readKeyringKekId(contents);
+      if (kekId == null) {
+        return null;
+      }
+      final entry = await _keyringService.read();
+      if (entry == null) {
+        debugPrint('Vault auto-unlock: no keyring entry present');
+        return null;
+      }
+      if (entry.id != kekId) {
+        debugPrint('Vault auto-unlock: keyring entry id does not match vault');
+        return null;
+      }
+      final unlocked = await LocalVaultEncryptionService.unlockWithKeyringKek(
+        contents,
+        kekId,
+        entry.kek,
+      );
+      await _cleanupVaultArtifactsAfterUnlock();
+      return LoadedAppData(
+        data: parsePlaintextAppData(unlocked.plaintextJson),
+        source: StorageDataSource.encryptedVault,
+        vaultSessionKeys: unlocked.sessionKeys,
+      );
+    } catch (e) {
+      debugPrint('Vault auto-unlock failed, falling back to password: $e');
+      return null;
     }
   }
 
