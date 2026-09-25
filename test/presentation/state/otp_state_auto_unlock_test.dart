@@ -187,5 +187,53 @@ void main() {
       expect(keyring.record, isNull);
       expect(await vaultKeyringKekId(), isNull);
     });
+
+    test('verifyVaultPassword checks the password after auto-unlock', () async {
+      await encryptedState(enableAutoUnlock: true);
+      final reopened = newState(newRepository());
+      await reopened.initializeData();
+      expect(reopened.requiresPassword, isFalse);
+
+      expect(await reopened.verifyVaultPassword('wrong-password'), isFalse);
+      expect(await reopened.verifyVaultPassword(''), isFalse);
+      expect(await reopened.verifyVaultPassword('vault-password'), isTrue);
+      expect(reopened.isBusy, isFalse);
+    });
+
+    test('verifyVaultPassword follows a password change', () async {
+      final state = await encryptedState();
+
+      await state.changeLocalVaultPassword('a-new-password');
+
+      expect(await state.verifyVaultPassword('vault-password'), isFalse);
+      expect(await state.verifyVaultPassword('a-new-password'), isTrue);
+    });
+
+    test('verifyVaultPassword surfaces a corrupted vault as an error',
+        () async {
+      final state = await encryptedState();
+      final repository = newRepository();
+      await (await repository.getEncryptedLocalFile())
+          .writeAsString('not a vault');
+
+      await expectLater(
+        state.verifyVaultPassword('vault-password'),
+        throwsA(isNot(isA<ArgumentError>())),
+      );
+    });
+
+    test('verifyVaultPassword requires encrypted storage', () async {
+      final repository = newRepository();
+      await repository.writeAppDataJson(
+        AppData(services: const [service], groups: const []),
+      );
+      final state = newState(repository);
+      await state.initializeData();
+
+      await expectLater(
+        state.verifyVaultPassword('anything'),
+        throwsA(isA<StateError>()),
+      );
+    });
   });
 }

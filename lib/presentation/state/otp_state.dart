@@ -24,6 +24,7 @@ enum BusyOperation {
   encryptingLocalData,
   changingVaultPassword,
   updatingAutoUnlock,
+  verifyingVaultPassword,
 }
 
 class OtpState extends ChangeNotifier {
@@ -158,6 +159,8 @@ class OtpState extends ChangeNotifier {
         return 'Updating vault password...';
       case BusyOperation.updatingAutoUnlock:
         return 'Updating automatic unlock...';
+      case BusyOperation.verifyingVaultPassword:
+        return 'Verifying vault password...';
       case null:
         return null;
     }
@@ -991,6 +994,21 @@ class OtpState extends ChangeNotifier {
       _localVaultPassword = null;
       notifyListeners();
     });
+  }
+
+  /// Re-checks the vault password before a sensitive action such as revealing
+  /// a secret. The secrets are already decrypted in memory, so this is a gate
+  /// rather than a decrypt; it matters most when auto-unlock means the password
+  /// was never typed this session.
+  Future<bool> verifyVaultPassword(String password) async {
+    if (!usesEncryptedLocalStorage) {
+      throw StateError('Encrypted local storage is not active');
+    }
+    _ensureNoVaultOperationInProgress();
+    return _runBusyOperation(
+      BusyOperation.verifyingVaultPassword,
+      () => _storageRepository.verifyVaultPassword(password),
+    );
   }
 
   /// Enables passwordless unlock on this device by storing a key-encryption key

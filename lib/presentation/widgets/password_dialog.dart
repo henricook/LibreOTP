@@ -7,6 +7,7 @@ enum PasswordDialogMode {
   decryptBackup,
   createVaultPassword,
   changeVaultPassword,
+  revealSecret,
 }
 
 class PasswordDialog extends StatefulWidget {
@@ -209,6 +210,8 @@ class _PasswordDialogState extends State<PasswordDialog> {
         return 'Create Vault Password';
       case PasswordDialogMode.changeVaultPassword:
         return 'Change Vault Password';
+      case PasswordDialogMode.revealSecret:
+        return 'Confirm Vault Password';
     }
   }
 
@@ -222,6 +225,8 @@ class _PasswordDialogState extends State<PasswordDialog> {
         return 'Choose a password for the encrypted local vault.';
       case PasswordDialogMode.changeVaultPassword:
         return 'Choose a new password for the encrypted local vault.';
+      case PasswordDialogMode.revealSecret:
+        return 'Enter your vault password to reveal the secret for this entry.';
     }
   }
 
@@ -235,6 +240,8 @@ class _PasswordDialogState extends State<PasswordDialog> {
         return 'Create Vault';
       case PasswordDialogMode.changeVaultPassword:
         return 'Change Password';
+      case PasswordDialogMode.revealSecret:
+        return 'Reveal';
     }
   }
 
@@ -248,6 +255,8 @@ class _PasswordDialogState extends State<PasswordDialog> {
         return 'A password is required to create the encrypted vault.';
       case PasswordDialogMode.changeVaultPassword:
         return 'A password is required to change the encrypted vault password.';
+      case PasswordDialogMode.revealSecret:
+        return 'A password is required to reveal this secret.';
     }
   }
 
@@ -279,6 +288,10 @@ class _PasswordDialogState extends State<PasswordDialog> {
 
     if (widget.mode == PasswordDialogMode.unlockVault) {
       return 'An error occurred while unlocking the vault. Please try again.';
+    }
+
+    if (widget.mode == PasswordDialogMode.revealSecret) {
+      return 'An error occurred while checking the password. Please try again.';
     }
 
     return 'An error occurred while decrypting the backup. Please try again.';

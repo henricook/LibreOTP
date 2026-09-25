@@ -31,6 +31,7 @@ void main() {
       required OtpDisplayState displayState,
       VoidCallback? onTap,
       Future<void> Function()? onEdit,
+      Future<void> Function()? onRevealSecret,
     }) {
       return MaterialApp(
         home: Scaffold(
@@ -49,6 +50,7 @@ void main() {
                 displayState: displayState,
                 onTap: onTap ?? () {},
                 onEdit: onEdit ?? () async {},
+                onRevealSecret: onRevealSecret,
                 iconWidth: 40,
                 nameWidth: 200,
                 accountWidth: 200,
@@ -239,6 +241,55 @@ void main() {
         await tester.pumpAndSettle();
 
         expect(editCount, equals(1));
+      });
+    });
+
+    group('Reveal secret', () {
+      Future<void> openContextMenu(WidgetTester tester) async {
+        final gesture = await tester.createGesture(
+          kind: PointerDeviceKind.mouse,
+          buttons: kSecondaryMouseButton,
+        );
+        await gesture.down(tester.getCenter(find.text('GitHub')));
+        await gesture.up();
+        await tester.pumpAndSettle();
+      }
+
+      testWidgets('calls onRevealSecret from the context menu',
+          (WidgetTester tester) async {
+        var revealCount = 0;
+
+        await tester.pumpWidget(createTestWidget(
+          service: testService,
+          displayState: emptyDisplayState,
+          onRevealSecret: () async {
+            revealCount++;
+          },
+        ));
+
+        await openContextMenu(tester);
+        await tester.tap(find.text('Reveal secret'));
+        await tester.pumpAndSettle();
+
+        expect(revealCount, equals(1));
+      });
+
+      testWidgets('is disabled without an encrypted vault',
+          (WidgetTester tester) async {
+        await tester.pumpWidget(createTestWidget(
+          service: testService,
+          displayState: emptyDisplayState,
+        ));
+
+        await openContextMenu(tester);
+        final item = find.text('Reveal secret (requires an encrypted vault)');
+        expect(item, findsOneWidget);
+
+        await tester.tap(item);
+        await tester.pumpAndSettle();
+
+        // A disabled item leaves the menu open.
+        expect(item, findsOneWidget);
       });
     });
 

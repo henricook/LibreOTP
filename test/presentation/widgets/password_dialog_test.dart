@@ -231,5 +231,47 @@ void main() {
         findsOneWidget,
       );
     });
+
+    testWidgets('shows reveal secret copy and action label', (
+      WidgetTester tester,
+    ) async {
+      await openDialog(
+        tester,
+        const PasswordDialog(mode: PasswordDialogMode.revealSecret),
+      );
+
+      expect(find.text('Confirm Vault Password'), findsOneWidget);
+      expect(
+        find.text(
+          'Enter your vault password to reveal the secret for this entry.',
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('Reveal'), findsOneWidget);
+
+      await tester.tap(find.text('Reveal'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('A password is required to reveal this secret.'),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('renders incorrect password error when revealing a secret', (
+      WidgetTester tester,
+    ) async {
+      await openDialog(
+        tester,
+        const PasswordDialog(
+          mode: PasswordDialogMode.revealSecret,
+          errorKind: VaultLoadErrorKind.incorrectPassword,
+        ),
+      );
+
+      expect(
+        find.text('Incorrect password. Please try again.'),
+        findsOneWidget,
+      );
+    });
   });
 }

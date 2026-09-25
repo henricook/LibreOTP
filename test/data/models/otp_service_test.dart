@@ -284,4 +284,49 @@ void main() {
       expect(orderInfo.position, equals(0));
     });
   });
+
+  group('OtpService export', () {
+    const service = OtpService(
+      id: 'export-id',
+      name: 'My GitHub',
+      secret: 'jbsw y3dp ehpk 3pxp==',
+      otp: OtpConfig(
+        account: 'me+work@example.com',
+        issuer: 'GitHub Inc',
+        algorithm: 'sha256',
+        digits: 8,
+        period: 60,
+      ),
+      order: OrderInfo(position: 0),
+    );
+
+    test('normalizes the secret to unpadded upper-case base32', () {
+      expect(service.normalizedSecret, equals('JBSWY3DPEHPK3PXP'));
+    });
+
+    test('builds a percent-encoded otpauth URI', () {
+      expect(
+        service.toOtpAuthUri(),
+        equals(
+          'otpauth://totp/GitHub%20Inc:me%2Bwork%40example.com'
+          '?secret=JBSWY3DPEHPK3PXP&issuer=GitHub%20Inc'
+          '&algorithm=SHA256&digits=8&period=60',
+        ),
+      );
+    });
+
+    test('falls back to the service name when there is no issuer', () {
+      final noIssuer = service.copyWith(
+        otp: const OtpConfig(account: '', issuer: ''),
+      );
+
+      expect(
+        noIssuer.toOtpAuthUri(),
+        equals(
+          'otpauth://totp/My%20GitHub?secret=JBSWY3DPEHPK3PXP'
+          '&issuer=My%20GitHub&algorithm=SHA1&digits=6&period=30',
+        ),
+      );
+    });
+  });
 }

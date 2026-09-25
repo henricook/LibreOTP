@@ -10,6 +10,7 @@ class ServiceRow extends DataRow {
     required OtpDisplayState displayState,
     required Function() onTap,
     required Future<void> Function() onEdit,
+    Future<void> Function()? onRevealSecret,
     required double iconWidth,
     required double nameWidth,
     required double accountWidth,
@@ -23,6 +24,7 @@ class ServiceRow extends DataRow {
                 width: iconWidth,
                 onTap: onTap,
                 onEdit: onEdit,
+                onRevealSecret: onRevealSecret,
                 child: TwoFasIconService.buildServiceIcon(
                   service.name,
                   service.otp.issuer,
@@ -35,6 +37,7 @@ class ServiceRow extends DataRow {
                 width: nameWidth,
                 onTap: onTap,
                 onEdit: onEdit,
+                onRevealSecret: onRevealSecret,
                 child: Text(service.name),
               ),
             ),
@@ -43,6 +46,7 @@ class ServiceRow extends DataRow {
                 width: accountWidth,
                 onTap: onTap,
                 onEdit: onEdit,
+                onRevealSecret: onRevealSecret,
                 child: Text(service.otp.account),
               ),
             ),
@@ -51,6 +55,7 @@ class ServiceRow extends DataRow {
                 width: issuerWidth,
                 onTap: onTap,
                 onEdit: onEdit,
+                onRevealSecret: onRevealSecret,
                 child: Text(service.otp.issuer),
               ),
             ),
@@ -59,6 +64,7 @@ class ServiceRow extends DataRow {
                 width: otpWidth,
                 onTap: onTap,
                 onEdit: onEdit,
+                onRevealSecret: onRevealSecret,
                 child: Text(displayState.otpCode),
               ),
             ),
@@ -67,6 +73,7 @@ class ServiceRow extends DataRow {
                 width: validityWidth,
                 onTap: onTap,
                 onEdit: onEdit,
+                onRevealSecret: onRevealSecret,
                 child: Text(displayState.validity),
               ),
             ),
@@ -79,6 +86,7 @@ class ServiceRow extends DataRow {
     required Widget child,
     required VoidCallback onTap,
     required Future<void> Function() onEdit,
+    required Future<void> Function()? onRevealSecret,
   }) {
     return Builder(
       builder: (context) {
@@ -94,16 +102,30 @@ class ServiceRow extends DataRow {
                 details.globalPosition.dx,
                 details.globalPosition.dy,
               ),
-              items: const [
-                PopupMenuItem<_ServiceRowAction>(
+              items: [
+                const PopupMenuItem<_ServiceRowAction>(
                   value: _ServiceRowAction.edit,
                   child: Text('Edit entry'),
+                ),
+                PopupMenuItem<_ServiceRowAction>(
+                  value: _ServiceRowAction.revealSecret,
+                  enabled: onRevealSecret != null,
+                  child: Text(
+                    onRevealSecret != null
+                        ? 'Reveal secret'
+                        : 'Reveal secret (requires an encrypted vault)',
+                  ),
                 ),
               ],
             );
 
-            if (selectedAction == _ServiceRowAction.edit) {
-              await onEdit();
+            switch (selectedAction) {
+              case _ServiceRowAction.edit:
+                await onEdit();
+              case _ServiceRowAction.revealSecret:
+                await onRevealSecret?.call();
+              case null:
+                break;
             }
           },
           child: SizedBox(
@@ -118,4 +140,5 @@ class ServiceRow extends DataRow {
 
 enum _ServiceRowAction {
   edit,
+  revealSecret,
 }

@@ -10,6 +10,7 @@ class OtpTable extends StatelessWidget {
   final Map<String, String> groupNames;
   final void Function(OtpService service) onRowTap;
   final Future<void> Function(OtpService service) onEditService;
+  final Future<void> Function(OtpService service)? onRevealSecret;
   final int? sortColumnIndex;
   final bool sortAscending;
   final void Function(int columnIndex, bool ascending) onSort;
@@ -20,6 +21,7 @@ class OtpTable extends StatelessWidget {
     required this.groupNames,
     required this.onRowTap,
     required this.onEditService,
+    this.onRevealSecret,
     required this.sortColumnIndex,
     required this.sortAscending,
     required this.onSort,
@@ -131,6 +133,8 @@ class OtpTable extends StatelessWidget {
             displayState: displayState,
             onTap: () => onRowTap(service),
             onEdit: () => onEditService(service),
+            onRevealSecret:
+                onRevealSecret == null ? null : () => onRevealSecret!(service),
             iconWidth: iconWidth,
             nameWidth: nameWidth,
             accountWidth: accountWidth,

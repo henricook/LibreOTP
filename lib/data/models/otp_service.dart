@@ -123,6 +123,30 @@ class OtpService {
       lastUsedAt: lastUsedAt,
     );
   }
+
+  /// The secret as unpadded, upper-case base32, the form authenticator apps
+  /// expect when it is typed or pasted in.
+  String get normalizedSecret =>
+      secret.replaceAll(RegExp(r'[\s=]'), '').toUpperCase();
+
+  /// A Key URI Format (`otpauth://totp/...`) link that other authenticator apps
+  /// can import. Components are percent-encoded rather than form-encoded
+  /// because several apps misread `+` as a literal plus.
+  String toOtpAuthUri() {
+    final issuer = otp.issuer.isNotEmpty ? otp.issuer : name;
+    final label = [
+      if (issuer.isNotEmpty) Uri.encodeComponent(issuer),
+      if (otp.account.isNotEmpty) Uri.encodeComponent(otp.account),
+    ].join(':');
+    final query = {
+      'secret': normalizedSecret,
+      if (issuer.isNotEmpty) 'issuer': issuer,
+      'algorithm': otp.algorithm.toUpperCase(),
+      'digits': '${otp.digits}',
+      'period': '${otp.period}',
+    }.entries.map((e) => '${e.key}=${Uri.encodeComponent(e.value)}').join('&');
+    return 'otpauth://totp/$label?$query';
+  }
 }
 
 class OtpConfig {

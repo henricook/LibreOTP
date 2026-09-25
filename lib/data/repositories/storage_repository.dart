@@ -506,6 +506,18 @@ class StorageRepository {
     }
   }
 
+  /// Checks [password] against the vault on disk without loading or caching
+  /// anything. Returns false for a wrong password; any other failure throws.
+  Future<bool> verifyVaultPassword(String password) async {
+    final contents = await readEncryptedAppData();
+    try {
+      await LocalVaultEncryptionService.decrypt(contents, password);
+      return true;
+    } on ArgumentError {
+      return false;
+    }
+  }
+
   Future<LoadedAppData> _loadEncryptedVaultData({String? password}) async {
     final contents = await readEncryptedAppData();
 

@@ -8,6 +8,7 @@ import '../widgets/edit_service_dialog.dart';
 import '../widgets/search_bar.dart';
 import '../widgets/otp_table.dart';
 import '../widgets/password_dialog.dart';
+import '../widgets/secret_export_dialog.dart';
 import 'about_page.dart';
 import 'data_directory_page.dart';
 
@@ -374,6 +375,55 @@ class _DashboardPageState extends State<DashboardPage> {
           name: result.name,
           account: result.account,
         );
+  }
+
+  /// Re-prompts for the vault password, even when auto-unlock skipped it at
+  /// launch, before showing a secret.
+  Future<void> _revealSecret(OtpService service) async {
+    final otpState = context.read<OtpState>();
+    VaultLoadErrorKind? errorKind;
+
+    while (true) {
+      final password = await showDialog<String>(
+        context: context,
+        builder: (_) => PasswordDialog(
+          mode: PasswordDialogMode.revealSecret,
+          errorKind: errorKind,
+        ),
+      );
+      if (password == null || !mounted) {
+        return;
+      }
+
+      final bool verified;
+      try {
+        verified = await otpState.verifyVaultPassword(password);
+      } catch (e) {
+        debugPrint('Could not verify vault password: $e');
+        if (!mounted) {
+          return;
+        }
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Could not verify the vault password'),
+            duration: Duration(seconds: 4),
+          ),
+        );
+        return;
+      }
+      if (!mounted) {
+        return;
+      }
+      if (verified) {
+        break;
+      }
+      errorKind = VaultLoadErrorKind.incorrectPassword;
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (_) => SecretExportDialog(service: service),
+    );
   }
 
   void _showDataDirectory(BuildContext context) {
@@ -915,6 +965,9 @@ class _DashboardPageState extends State<DashboardPage> {
                                 .generateOtpForService(service.id, context),
                             onEditService: (service) =>
                                 _showEditDialog(context, service),
+                            onRevealSecret: otpState.usesEncryptedLocalStorage
+                                ? _revealSecret
+                                : null,
                             sortColumnIndex: _sortColumnIndex,
                             sortAscending: _sortAscending,
                             onSort: (columnIndex, _) => _handleTableSort(
